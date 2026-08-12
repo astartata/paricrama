@@ -48,10 +48,20 @@
   async function readCloud() {
     try {
       const f = await waitFirebase();
+      const adminGuestDocs = await f.getDocs(f.collection(f.db, 'adminGuests'));
+      const deletedGuests = new Set();
+      adminGuestDocs.forEach(snap => {
+        const guest = snap.data();
+        if (guest.deleted || guest.refusal) deletedGuests.add(snap.id);
+      });
+      d.guests.forEach(guest => {
+        if (deletedGuests.has(key(guest.email || guest.name))) guest.refusal = true;
+      });
       const registrations = await f.getDocs(f.collection(f.db, 'registrations'));
       registrations.forEach(snap => {
         const reg = snap.data();
         (reg.participants || []).forEach((person, participantIndex) => {
+          if (deletedGuests.has(key(person.email || person.name))) return;
           let guest = d.guests.find(x => x.email && x.email === person.email) || d.guests.find(x => x.name === person.name);
           if (!guest) { guest = {name: person.name, refusal: false}; d.guests.push(guest); }
           Object.assign(guest, person, {registrationId: snap.id, participantIndex, beds: reg.beds || [], status: reg.status || 'new'});
@@ -76,7 +86,7 @@
     if (lock && lock.type === 'admin') return {state:'admin', text:'заблокировано · ' + (lock.name || 'администратор'), note:lock.note || ''};
     if (lock && lock.type === 'occupied') return {state:'busy', text:'Заселён · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
     if (lock && lock.type === 'payment' && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:'Заселён · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
-    if (lock && lock.type === 'selection' && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:'Временно выбрано · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
+    if (lock && lock.type === 'selection' && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:'Ожидается отправка заявки', note:lock.email || ''};
     for (const reg of registrations || []) {
       const data = reg.data();
       if ((data.beds || []).includes(room.roomId + '-' + n)) return {state:'busy', text:'Заселён · ' + (data.participants || []).map(x => x.name).filter(Boolean).join(', '), note:data.loginEmail || ''};
@@ -98,10 +108,16 @@
     ({dashboard, guests, rooms, settings}[view] || dashboard)();
   }
 
-  function dashboard() {
+  async function dashboard() {
     const occupied = d.rooms.reduce((n, r) => n + ['g1','g2','g3','g4'].filter(x => r[x]).length, 0);
     const total = d.rooms.reduce((n, r) => n + Number(r.beds || 0), 0);
-    app.innerHTML = `<div class="grid metrics"><div class="metric"><div class="metric-label">Участники</div><div class="metric-value">${d.guests.filter(x => !x.refusal).length}</div><div class="metric-note">из заявок Firebase</div></div><div class="metric"><div class="metric-label">Места</div><div class="metric-value">${occupied} / ${total}</div><div class="metric-note">занято</div></div></div><div class="panel"><div class="panel-head"><h2>Размещение</h2><button class="link" data-go="rooms">Открыть базу комнат →</button></div><p class="sub">Данные обновляются из Firebase.</p></div>`;
+    let waiting = 0;
+    try {
+      const f = await waitFirebase();
+      const locks = await f.getDocs(f.collection(f.db, 'placeLocks'));
+      locks.forEach(snap => { const lock = snap.data(); if (lock.type === 'selection' && lock.expiresAt > Date.now()) waiting += 1; });
+    } catch {}
+    app.innerHTML = `<div class="grid metrics"><div class="metric"><div class="metric-label">Участники</div><div class="metric-value">${d.guests.filter(x => !x.refusal).length}</div><div class="metric-note">из заявок Firebase</div></div><div class="metric"><div class="metric-label">Места</div><div class="metric-value">${occupied} / ${total}</div><div class="metric-note">занято</div></div><div class="metric"><div class="metric-label">Ожидается отправка заявки</div><div class="metric-value">${waiting}</div><div class="metric-note">временно выбранные места</div></div></div><div class="panel"><div class="panel-head"><h2>Размещение</h2><button class="link" data-go="rooms">Открыть базу комнат →</button></div><p class="sub">Данные обновляются из Firebase.</p></div>`;
     document.querySelector('[data-go]')?.addEventListener('click', () => render('rooms'));
   }
 
@@ -129,8 +145,11 @@
           await Promise.all((g.beds || []).map(bed => f.deleteDoc(f.doc(f.db, 'placeLocks', bed))));
         }
       }
-      await f.deleteDoc(f.doc(f.db, 'adminGuests', key(g.email || g.name)));
-      await readCloud(); render('guests'); toast('Участник удалён');
+      g.refusal = true;
+      g.deleted = true;
+      await save('adminGuests', g.email || g.name, {...g, refusal:true, deleted:true});
+      d.guests = d.guests.filter(x => x !== g);
+      render('guests'); toast('Участник удалён');
     } catch (error) { toast('Ошибка удаления: ' + error.message); }
   }
 

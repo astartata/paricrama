@@ -99,14 +99,14 @@
 <script>
   const lockKey='parikrama-place-locks', lockOwner=sessionStorage.getItem('parikrama-lock-owner')||crypto.randomUUID();sessionStorage.setItem('parikrama-lock-owner',lockOwner);
   const readLocks=()=>{try{return JSON.parse(localStorage.getItem(lockKey)||'{}')}catch{return {}}};const writeLocks=x=>localStorage.setItem(lockKey,JSON.stringify(x));const lockFor=input=>readLocks()[input.value];
-  function applyLocks(){const now=Date.now(),locks=readLocks();Object.keys(locks).forEach(k=>{if(locks[k].expiresAt<=now&&locks[k].type!=='admin')delete locks[k]});writeLocks(locks);document.querySelectorAll('.bed-input').forEach(input=>{const lock=locks[input.value],label=input.closest('.bed-sector'),small=label?.querySelector('small');if(lock&&lock.owner!==lockOwner){input.disabled=true;label.classList.add('occupied');if(small)small.textContent='временно занято · '+Math.ceil((lock.expiresAt-now)/60000)+' мин'}else if(lock?.owner===lockOwner){input.checked=true;if(small)small.textContent='выбрано · удерживается 30 мин'}})}
+  function applyLocks(){const now=Date.now(),locks=readLocks();Object.keys(locks).forEach(k=>{if(locks[k].expiresAt<=now&&locks[k].type!=='admin')delete locks[k]});writeLocks(locks);document.querySelectorAll('.bed-input').forEach(input=>{const lock=locks[input.value],label=input.closest('.bed-sector'),small=label?.querySelector('small');if(lock&&lock.owner!==lockOwner){input.disabled=true;label.classList.add('occupied');if(small)small.textContent='ожидается отправка заявки'}else if(lock?.owner===lockOwner){input.checked=true;if(small)small.textContent='выбрано · удерживается 30 мин'}})}
   document.querySelectorAll('.bed-input').forEach(input=>input.addEventListener('change',()=>{const locks=readLocks();if(input.checked)locks[input.value]={type:'selection',owner:lockOwner,expiresAt:Date.now()+30*60*1000};else if(locks[input.value]?.owner===lockOwner)delete locks[input.value];writeLocks(locks);applyLocks()}));applyLocks();setInterval(applyLocks,60000);
 </script>
 <script type="module">
   import { auth, db } from './firebase-config.js';
   import { collection, addDoc, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
   import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
-  const accountPassword=document.createElement('input');accountPassword.name='accountPassword';accountPassword.type='password';accountPassword.minLength=6;accountPassword.required=true;accountPassword.placeholder='Пароль для личного кабинета (минимум 6 символов)';accountPassword.setAttribute('aria-label','Пароль для личного кабинета');accountPassword.style='display:block;width:100%;margin:12px 0;padding:12px;border:1px solid #ded6ce;border-radius:9px';document.querySelector('.submit').after(accountPassword);accountPassword.insertAdjacentHTML('beforebegin','<label style="display:block;margin-top:12px;font-weight:700;font-size:12px">Пароль для входа в личный кабинет *</label>');
+  const submitButton=document.querySelector('.submit'),passwordWrap=document.createElement('div');passwordWrap.className='field full';passwordWrap.style='margin-top:14px';passwordWrap.innerHTML='<label>Придумайте и сохраните себе пароль для входа в личный кабинет *</label><input name="accountPassword" type="password" minlength="6" required autocomplete="new-password" placeholder="Минимум 6 символов">';submitButton.before(passwordWrap);
   document.querySelector('#registration').addEventListener('submit',async e=>{
     const form=e.currentTarget,button=form.querySelector('.submit'),success=document.querySelector('#success');
     if(button.disabled)return;button.disabled=true;button.textContent='Сохраняем заявку…';
@@ -117,7 +117,7 @@
       const registration={participants,beds,status:'new',loginEmail:participants[0]?.email||'',ownerUid:auth.currentUser?.uid||'',createdAt:serverTimestamp()};
       const saved=await addDoc(collection(db,'registrations'),registration);
       await Promise.all(beds.map(key=>setDoc(doc(db,'placeLocks',key),{type:'occupied',name:participants.map(x=>x.name).filter(Boolean).join(', '),email:participants[0]?.email||'',ownerUid:auth.currentUser?.uid||'',registrationId:saved.id,updatedAt:serverTimestamp()},{merge:true})));
-      success.textContent='Заявка сохранена. Теперь входите в личный кабинет по email и паролю.';success.classList.add('show');button.textContent='Заявка отправлена';
+      success.textContent='Заявка отправлена. Теперь входите в личный кабинет по email и паролю.';success.classList.add('show');button.textContent='Заявка отправлена';
     }catch(error){console.error(error);button.disabled=false;button.textContent='Отправить заявку';success.textContent='Ошибка Firebase: '+(error.code||'неизвестная ошибка')+' — '+(error.message||'проверьте правила Firestore и настройки Firebase');success.classList.add('show')}
   });
 </script>
