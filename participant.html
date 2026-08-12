@@ -75,8 +75,12 @@
     try{
       const [regs,locks,rooms]=await Promise.all([getDocs(collection(db,'registrations')),getDocs(collection(db,'placeLocks')),getDocs(collection(db,'adminRooms'))]);
       const occupied=new Set();regs.forEach(s=>(s.data().beds||[]).forEach(x=>occupied.add(x)));const admin=new Set();const temporary=new Set();locks.forEach(s=>{const lock=s.data();if(lock.type==='admin')admin.add(s.id);if((lock.type==='selection'||lock.type==='payment')&&lock.expiresAt>Date.now()&&lock.owner!==owner)temporary.add(s.id)});
-      rooms.forEach(s=>{const r=s.data();const card=[...document.querySelectorAll('.dynamic-room')].find(x=>x.querySelector('.room-id')?.textContent===r.roomId);if(r.deleted){card?.remove();return}if(card){const meta=card.querySelector('.room-meta');if(meta)meta.innerHTML=escParticipant(r.hotel)+'<br>'+escParticipant(r.tariff)}(r.blockedPlaces||[]).forEach(n=>admin.add(r.roomId+'-'+n))});
+      const deleted=new Set();
+      rooms.forEach(s=>{const r=s.data();if(r.deleted){deleted.add(r.roomId||s.id);return}const card=[...document.querySelectorAll('.dynamic-room')].find(x=>x.querySelector('input.bed-input')?.value.startsWith((r.roomId||s.id)+'-'));if(card){const meta=card.querySelector('.room-meta');if(meta)meta.innerHTML=escParticipant(r.hotel)+'<br>'+escParticipant(r.tariff)}(r.blockedPlaces||[]).forEach(n=>admin.add((r.roomId||s.id)+'-'+n))});
+      document.querySelectorAll('.dynamic-room').forEach(card=>{const input=card.querySelector('input.bed-input');const roomId=input?.value.split('-').slice(0,-1).join('-');if(roomId&&deleted.has(roomId))card.remove()});
+      document.querySelectorAll('.room-group').forEach(group=>{if(!group.querySelector('.dynamic-room'))group.remove()});
       document.querySelectorAll('.bed-input').forEach(input=>{const label=input.closest('.bed-sector'),id=input.value;if(occupied.has(id)||admin.has(id)||temporary.has(id)){input.checked=false;input.disabled=true;label?.remove()}else{input.disabled=false}});
+      document.querySelectorAll('.room-group').forEach(group=>{const remaining=group.querySelectorAll('.bed-input:not(:disabled)').length;const count=group.querySelector('.room-group-count');if(count)count.textContent=remaining+' свободно'});
     }catch(e){console.error('Не удалось обновить места',e)}
   }
   const escParticipant=x=>String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
