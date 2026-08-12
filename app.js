@@ -3,6 +3,24 @@
  const genderLabel=g=>g==='Прабху'?'Мужчина':g==='Матаджи'?'Женщина':g;
  const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
  const dbKey=s=>String(s||'').replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,120)||'unknown';
+ let liveRegistrations=[], liveLocks={};
+ const livePlace=(roomId,n)=>{
+  const key=`${roomId}-${n}`;
+  const admin=liveLocks[key];
+  if(admin?.type==='admin')return {type:'admin',name:admin.name||admin.owner||'Администратор',note:admin.note||''};
+  for(const reg of liveRegistrations){
+   if(!(reg.beds||[]).includes(key))continue;
+   const names=(reg.participants||[]).map(x=>x.name).filter(Boolean).join(', ')||'участник';
+   const created=reg.createdAt?.toMillis?reg.createdAt.toMillis():Date.parse(reg.createdAt||'')||Date.now();
+   const expires=created+7*24*60*60*1000;
+   if(expires>Date.now())return {type:'registration',name:names,email:reg.loginEmail||'',expires};
+  }
+  return null;
+ };
+ async function loadLivePlacement(){
+  try{const f=await window.firebaseReady;const [rs,ls]=await Promise.all([f.getDocs(f.collection(f.db,'registrations')),f.getDocs(f.collection(f.db,'placeLocks'))]);liveRegistrations=rs.docs.map(x=>({id:x.id,...x.data()}));liveLocks={};ls.forEach(x=>liveLocks[x.id]=x.data());
+  }catch(e){console.warn('Firebase placement data not loaded',e)}
+ }
  async function saveAdminDoc(collectionName,key,data){const f=await window.firebaseReady;await f.setDoc(f.doc(f.db,collectionName,dbKey(key)),{...data,updatedAt:f.serverTimestamp()},{merge:true})}
  async function loadAdminData(){try{while(!window.firebaseReady)await new Promise(r=>setTimeout(r,50));const f=await window.firebaseReady;const gs=await f.getDocs(f.collection(f.db,'adminGuests'));gs.forEach(x=>{const g=d.guests.find(v=>dbKey(v.email||v.name)===x.id);if(g)Object.assign(g,x.data())});const rs=await f.getDocs(f.collection(f.db,'adminRooms'));rs.forEach(x=>{const r=d.rooms.find(v=>dbKey(v.roomId)===x.id);if(r)Object.assign(r,x.data())})}catch(e){console.warn('Firebase admin data not loaded',e)}}
  const activeGuests=()=>d.guests.filter(g=>!g.refusal), occupied=()=>d.rooms.reduce((n,r)=>n+(r.g1?1:0)+(r.g2?1:0),0), totalBeds=()=>d.rooms.reduce((n,r)=>n+r.beds,0);
@@ -35,4 +53,10 @@
  document.addEventListener('click',e=>{if(e.target.matches('.place-toggle'))setTimeout(()=>{const r=d.rooms[Number(e.target.dataset.room)],n=Number(e.target.dataset.place);let locks={};try{locks=JSON.parse(localStorage.getItem('parikrama-place-locks')||'{}')}catch{}if(r.blockedPlaces?.includes(n))locks[`${r.roomId}-${n}`]={type:'admin',owner:'admin',expiresAt:Infinity,note:r.blockedNote||'Команда'};else delete locks[`${r.roomId}-${n}`];localStorage.setItem('parikrama-place-locks',JSON.stringify(locks))},0)});
  function bindGo(){document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>render(b.dataset.go))}
  document.querySelector('#nav').onclick=e=>{const b=e.target.closest('[data-view]');if(b)render(b.dataset.view)};document.querySelector('#refresh').onclick=()=>{toast('Данные обновлены');render(document.querySelector('.nav-item.active').dataset.view)};document.querySelector('#report').onclick=()=>{const text=`Парикрама 2026\nУчастники: ${activeGuests().length}\nМеста: ${occupied()}/${totalBeds()}\nОплаты: ${d.payments.length}`;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));a.download='parikrama-report.txt';a.click()};function toast(x){const t=document.querySelector('#toast');t.textContent=x;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}loadAdminData().then(()=>render());
+ loadLivePlacement().then(()=>{if(document.querySelector('#app .room-grid'))render('rooms')});
+ function rooms(){
+  app.innerHTML='<div class="panel"><div class="panel-head"><div><h2>База комнат и мест</h2><p class="sub">Занятые места, заявки и блокировки загружаются из Firebase.</p></div><button class="primary" id="reload-rooms">Обновить данные</button></div><div class="grid room-grid">'+d.rooms.map((r,ri)=>{const places=Array.from({length:r.beds},(_,i)=>{const n=i+1,staticName=r['g'+n],live=livePlace(r.roomId,n),blocked=(r.blockedPlaces||[]).includes(n)||live?.type==='admin',name=staticName||live?.name||'';const text=name?'занято · '+esc(name):blocked?'заблокировано · '+esc(live?.name||r.blockedMeta?.[n]?.name||'команда'):'свободно';const note=live?.note||r.blockedMeta?.[n]?.note||'';return '<div style="border:1px solid var(--line);border-radius:9px;padding:10px;background:'+(name?'#f1f0ed':blocked?'#fff8ed':'#fff')+'"><div style="font-weight:800;font-size:12px">Место '+n+'</div><div class="sub">'+text+'</div>'+(note?'<div class="sub">'+esc(note)+'</div>':'')+'<button class="edit-button place-toggle" data-room="'+ri+'" data-place="'+n+'" style="margin-top:7px">'+(blocked?'Снять блокировку':'Заблокировать')+'</button></div>'}).join('');return '<div class="room-card"><div class="room-top"><div><div class="room-id">'+esc(r.roomId)+'</div><div class="room-hotel">'+esc(r.hotel)+' · '+esc(r.tariff)+'</div></div><span class="badge">'+r.beds+' мест</span></div><div class="room-sectors" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">'+places+'</div></div>'}).join('')+'</div></div>';
+  document.querySelector('#reload-rooms').onclick=async()=>{await loadLivePlacement();render('rooms');toast('База комнат обновлена')};
+  document.querySelectorAll('.place-toggle').forEach(b=>b.onclick=async()=>{const r=d.rooms[Number(b.dataset.room)],n=Number(b.dataset.place),key=r.roomId+'-'+n;if((r.blockedPlaces||[]).includes(n)){r.blockedPlaces=r.blockedPlaces.filter(x=>x!==n);if(r.blockedMeta)delete r.blockedMeta[n];delete liveLocks[key];await saveAdminDoc('adminRooms',r.roomId,r);await saveAdminDoc('placeLocks',key,{type:'released',releasedAt:new Date().toISOString()});render('rooms');return}const name=prompt('Кто блокирует место? Введите имя и фамилию:','');if(name===null)return;const note=prompt('Комментарий для команды:','');r.blockedPlaces=r.blockedPlaces||[];r.blockedMeta=r.blockedMeta||{};r.blockedPlaces.push(n);r.blockedMeta[n]={name:name||'Команда',note:note||'',blockedAt:new Date().toISOString()};await saveAdminDoc('adminRooms',r.roomId,r);await saveAdminDoc('placeLocks',key,{type:'admin',name:name||'Команда',note:note||'',roomId:r.roomId,place:n,blockedAt:new Date().toISOString()});liveLocks[key]={type:'admin',name:name||'Команда',note:note||''};render('rooms');toast('Место заблокировано и сохранено')});
+ }
 })();
