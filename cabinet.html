@@ -1,7 +1,97 @@
-<!doctype html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Личный кабинет — Парикрама 2026</title><link rel="stylesheet" href="styles.css"></head><body><main class="cabinet"><div class="cabinet-card"><h1>Личный кабинет</h1><p>Вход по email и паролю</p><div id="login-box"><div class="field"><label>Email</label><input id="email" type="email" autocomplete="username"></div><div class="field"><label>Пароль</label><input id="password" type="password" autocomplete="current-password" minlength="6"></div><button id="login" class="cabinet-button" style="margin-top:12px">Войти</button><div id="status" class="cabinet-status" style="margin-top:14px"></div></div><div id="user-box" class="hidden"><span id="user-email"></span> <button id="logout" class="cabinet-button secondary">Выйти</button></div></div><div id="application" class="cabinet-card hidden"><h2>Моя заявка</h2><div id="application-content"></div></div></main><script type="module">
-import {auth,db} from './firebase-config.js';import {signInWithEmailAndPassword,onAuthStateChanged,signOut} from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';import {collection,getDocs,query,where} from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
-const $=id=>document.getElementById(id),status=$('status');
-$('login').onclick=async()=>{const email=$('email').value.trim(),password=$('password').value;if(!email||!password){status.textContent='Введите email и пароль';return}try{await signInWithEmailAndPassword(auth,email,password)}catch(e){status.textContent='Не удалось войти: '+(e.code||e.message)}};
-$('logout').onclick=()=>signOut(auth);
-onAuthStateChanged(auth,async user=>{if(!user){$('login-box').classList.remove('hidden');$('user-box').classList.add('hidden');$('application').classList.add('hidden');return}$('login-box').classList.add('hidden');$('user-box').classList.remove('hidden');$('application').classList.remove('hidden');$('user-email').textContent=user.email;const snap=await getDocs(query(collection(db,'registrations'),where('loginEmail','==',user.email)));$('application-content').innerHTML=snap.docs.map(s=>{const r=s.data();return `<div class="person"><b>${(r.participants||[]).map(p=>p.name).join(', ')}</b><div class="muted">Места: ${(r.beds||[]).join(', ')||'не выбраны'}</div><div class="muted">Статус: ${r.status||'заявка получена'}</div></div>`}).join('')||'Заявка с таким email пока не найдена.'});
-</script><script>document.title=document.title.replace('Парикрама','Ретрит');</script></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Личный кабинет — Ретрит 2026</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="cabinet">
+    <section class="cabinet-card">
+      <h1>Личный кабинет</h1>
+      <p>Вход по email и паролю</p>
+      <div id="login-box">
+        <div class="field">
+          <label>Email</label>
+          <input id="email" type="email" autocomplete="username">
+        </div>
+        <div class="field">
+          <label>Пароль</label>
+          <input id="password" type="password" autocomplete="current-password" minlength="6">
+        </div>
+        <button id="login" class="primary" type="button">Войти</button>
+        <div id="status" class="cabinet-status"></div>
+      </div>
+      <div id="user-box" class="hidden">
+        <span id="user-email"></span>
+        <button id="logout" class="ghost" type="button">Выйти</button>
+      </div>
+    </section>
+
+    <section id="application" class="cabinet-card hidden">
+      <h2>Моя заявка</h2>
+      <div id="application-content"></div>
+    </section>
+  </main>
+
+  <script type="module">
+    import {auth, db} from './firebase-config.js';
+    import {signInWithEmailAndPassword, onAuthStateChanged, signOut} from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
+    import {collection, getDocs, query, where} from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
+
+    const $ = id => document.getElementById(id);
+    const status = $('status');
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[x]));
+
+    function renderApplications(docs) {
+      $('application-content').innerHTML = docs.map(s => {
+        const r = s.data();
+        return `<div class="person"><b>${esc((r.participants || []).map(p => p.name).filter(Boolean).join(', '))}</b><div class="muted">Места: ${esc((r.beds || []).join(', ') || 'не выбраны')}</div><div class="muted">Статус: ${esc(r.status || 'заявка получена')}</div></div>`;
+      }).join('') || 'Заявка с таким email пока не найдена. Если вы уже отправляли заявку до обновления кабинета, напишите администратору: он привяжет её к вашему аккаунту.';
+    }
+
+    async function loadApplications(user) {
+      $('application-content').textContent = 'Загружаем заявку...';
+      try {
+        const byUid = await getDocs(query(collection(db, 'registrations'), where('ownerUid', '==', user.uid)));
+        if (!byUid.empty) { renderApplications(byUid.docs); return; }
+
+        const byEmail = await getDocs(query(collection(db, 'registrations'), where('loginEmail', '==', user.email)));
+        renderApplications(byEmail.docs);
+      } catch (error) {
+        console.error(error);
+        $('application-content').textContent = 'Firebase не разрешил прочитать заявку: ' + (error.code || error.message) + '. Проверьте, что новые правила Firestore опубликованы.';
+      }
+    }
+
+    $('login').onclick = async () => {
+      const email = $('email').value.trim();
+      const password = $('password').value;
+      if (!email || !password) { status.textContent = 'Введите email и пароль'; return; }
+      try {
+        status.textContent = '';
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        status.textContent = 'Не удалось войти: ' + (error.code || error.message);
+      }
+    };
+
+    $('logout').onclick = () => signOut(auth);
+
+    onAuthStateChanged(auth, async user => {
+      if (!user) {
+        $('login-box').classList.remove('hidden');
+        $('user-box').classList.add('hidden');
+        $('application').classList.add('hidden');
+        return;
+      }
+      $('login-box').classList.add('hidden');
+      $('user-box').classList.remove('hidden');
+      $('application').classList.remove('hidden');
+      $('user-email').textContent = user.email;
+      await loadApplications(user);
+    });
+  </script>
+</body>
+</html>

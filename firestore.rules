@@ -15,6 +15,10 @@ service cloud.firestore {
       return signedIn() && request.auth.token.email == email;
     }
 
+    function isOwnUid(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
     match /admins/{adminUid} {
       allow get: if signedIn() && request.auth.uid == adminUid;
       allow list, create, update, delete: if isAdmin();
@@ -53,7 +57,8 @@ service cloud.firestore {
       allow create: if isOwnEmail(request.resource.data.loginEmail);
 
       allow read: if isAdmin()
-        || isOwnEmail(resource.data.loginEmail);
+        || isOwnEmail(resource.data.loginEmail)
+        || isOwnUid(resource.data.ownerUid);
 
       allow update, delete: if isAdmin();
     }
