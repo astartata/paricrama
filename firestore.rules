@@ -1,0 +1,69 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isOwnEmail(email) {
+      return signedIn() && request.auth.token.email == email;
+    }
+
+    match /admins/{adminUid} {
+      allow get: if signedIn() && request.auth.uid == adminUid;
+      allow list, create, update, delete: if isAdmin();
+    }
+
+    match /adminRooms/{roomId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /placeLocks/{placeId} {
+      allow read: if true;
+
+      allow create, update: if isAdmin()
+        || (
+          request.resource.data.type == 'selection'
+          && (
+            !exists(/databases/$(database)/documents/placeLocks/$(placeId))
+            || resource.data.type == 'selection'
+          )
+        )
+        || (
+          request.resource.data.type == 'occupied'
+          && isOwnEmail(request.resource.data.email)
+          && (
+            !exists(/databases/$(database)/documents/placeLocks/$(placeId))
+            || resource.data.type == 'selection'
+          )
+        );
+
+      allow delete: if isAdmin()
+        || resource.data.type == 'selection';
+    }
+
+    match /registrations/{registrationId} {
+      allow create: if isOwnEmail(request.resource.data.loginEmail);
+
+      allow read: if isAdmin()
+        || isOwnEmail(resource.data.loginEmail);
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /adminGuests/{guestId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

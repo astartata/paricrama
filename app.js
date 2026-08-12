@@ -7,6 +7,39 @@
   const waitFirebase = async () => { while (!window.firebaseReady) await new Promise(r => setTimeout(r, 100)); return window.firebaseReady; };
   const toast = message => { const el = document.querySelector('#toast'); if (!el) return; el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2500); };
 
+  async function requireAdmin() {
+    const f = await waitFirebase();
+    const hasAdminAccess = async user => {
+      if (!user) return false;
+      const adminDoc = await f.getDoc(f.doc(f.db, 'admins', user.uid));
+      return adminDoc.exists();
+    };
+    const currentUser = await new Promise(resolve => f.onAuthStateChanged(f.auth, resolve));
+    if (await hasAdminAccess(currentUser)) return true;
+    if (currentUser) await f.signOut(f.auth);
+    title.textContent = 'Вход администратора';
+    app.innerHTML = `<div class="panel" style="max-width:460px"><div class="panel-head"><div><h2>Админка</h2><p class="sub">Войдите под аккаунтом администратора.</p></div></div><div class="fields" style="grid-template-columns:1fr"><div class="field"><label>Email</label><input id="admin-email" type="email" autocomplete="username"></div><div class="field"><label>Пароль</label><input id="admin-password" type="password" autocomplete="current-password"></div></div><button class="primary" id="admin-login" style="margin-top:14px">Войти</button><p class="sub" id="admin-status" style="margin-top:12px"></p></div>`;
+    return new Promise(resolve => {
+      document.querySelector('#admin-login').onclick = async () => {
+        const email = document.querySelector('#admin-email').value.trim();
+        const password = document.querySelector('#admin-password').value;
+        const status = document.querySelector('#admin-status');
+        if (!email || !password) { status.textContent = 'Введите email и пароль'; return; }
+        try {
+          const credential = await f.signInWithEmailAndPassword(f.auth, email, password);
+          if (!(await hasAdminAccess(credential.user))) {
+            await f.signOut(f.auth);
+            status.textContent = 'У этого аккаунта нет прав администратора.';
+            return;
+          }
+          resolve(true);
+        } catch (error) {
+          status.textContent = 'Не удалось войти: ' + (error.code || error.message);
+        }
+      };
+    });
+  }
+
   async function save(collectionName, id, data) {
     const f = await waitFirebase();
     await f.setDoc(f.doc(f.db, collectionName, key(id)), {...data, updatedAt: f.serverTimestamp()}, {merge: true});
@@ -21,7 +54,7 @@
         (reg.participants || []).forEach((person, participantIndex) => {
           let guest = d.guests.find(x => x.email && x.email === person.email) || d.guests.find(x => x.name === person.name);
           if (!guest) { guest = {name: person.name, refusal: false}; d.guests.push(guest); }
-          Object.assign(guest, person, {registrationId: snap.id, participantIndex, receipts: reg.receipts || [], beds: reg.beds || [], status: reg.status || 'new'});
+          Object.assign(guest, person, {registrationId: snap.id, participantIndex, beds: reg.beds || [], status: reg.status || 'new'});
         });
       });
       const roomDocs = await f.getDocs(f.collection(f.db, 'adminRooms'));
@@ -41,7 +74,9 @@
   function placeInfo(room, n, registrations, locks) {
     const lock = locks[room.roomId + '-' + n];
     if (lock && lock.type === 'admin') return {state:'admin', text:'заблокировано · ' + (lock.name || 'администратор'), note:lock.note || ''};
-    if (lock && (lock.type === 'selection' || lock.type === 'payment') && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:(lock.type === 'payment' ? 'Заселён · ожидает оплату' : 'Временно выбрано') + ' · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
+    if (lock && lock.type === 'occupied') return {state:'busy', text:'Заселён · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
+    if (lock && lock.type === 'payment' && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:'Заселён · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
+    if (lock && lock.type === 'selection' && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:'Временно выбрано · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
     for (const reg of registrations || []) {
       const data = reg.data();
       if ((data.beds || []).includes(room.roomId + '-' + n)) return {state:'busy', text:'Заселён · ' + (data.participants || []).map(x => x.name).filter(Boolean).join(', '), note:data.loginEmail || ''};
@@ -59,8 +94,8 @@
 
   function render(view = 'dashboard') {
     document.querySelectorAll('.nav-item').forEach(x => x.classList.toggle('active', x.dataset.view === view));
-    title.textContent = ({dashboard:'Дашборд', guests:'Участники', rooms:'Размещение', payments:'Оплаты', settings:'Настройки'}[view] || view);
-    ({dashboard, guests, rooms, payments, settings}[view] || dashboard)();
+    title.textContent = ({dashboard:'Дашборд', guests:'Участники', rooms:'Размещение', settings:'Настройки'}[view] || view);
+    ({dashboard, guests, rooms, settings}[view] || dashboard)();
   }
 
   function dashboard() {
@@ -72,7 +107,7 @@
 
   function guests() {
     const list = d.guests.filter(x => !x.refusal);
-    app.innerHTML = `<div class="panel"><div class="panel-head"><h2>Участники</h2><button class="primary" id="reload-guests">Обновить</button></div><div class="table-wrap"><table class="table"><thead><tr><th>ФИО</th><th>Email</th><th>Город / страна</th><th>Место</th><th>Чек</th><th></th></tr></thead><tbody>${list.map((g, i) => `<tr><td class="name">${esc(g.name)}</td><td>${esc(g.email)}</td><td>${esc(g.city)} / ${esc(g.country)}</td><td>${esc((g.beds || []).join(', '))}</td><td>${g.receipts?.[0]?.url ? `<a class="link" href="${esc(g.receipts[0].url)}" target="_blank">Открыть</a>` : '—'}</td><td><button class="edit-button edit-guest" data-index="${d.guests.indexOf(g)}">Редактировать</button> <button class="edit-button delete-guest" data-index="${d.guests.indexOf(g)}">Удалить</button></td></tr>`).join('')}</tbody></table></div></div>`;
+    app.innerHTML = `<div class="panel"><div class="panel-head"><h2>Участники</h2><button class="primary" id="reload-guests">Обновить</button></div><div class="table-wrap"><table class="table"><thead><tr><th>ФИО</th><th>Email</th><th>Город / страна</th><th>Место</th><th></th></tr></thead><tbody>${list.map((g, i) => `<tr><td class="name">${esc(g.name)}</td><td>${esc(g.email)}</td><td>${esc(g.city)} / ${esc(g.country)}</td><td>${esc((g.beds || []).join(', '))}</td><td><button class="edit-button edit-guest" data-index="${d.guests.indexOf(g)}">Редактировать</button> <button class="edit-button delete-guest" data-index="${d.guests.indexOf(g)}">Удалить</button></td></tr>`).join('')}</tbody></table></div></div>`;
     document.querySelector('#reload-guests').onclick = async () => { await readCloud(); render('guests'); };
     document.querySelectorAll('.edit-guest').forEach(button => button.onclick = () => editGuest(d.guests[Number(button.dataset.index)]));
     document.querySelectorAll('.delete-guest').forEach(button => button.onclick = () => deleteGuest(d.guests[Number(button.dataset.index)]));
@@ -101,10 +136,10 @@
 
   function editGuest(g) {
     const modal = document.createElement('div'); modal.className = 'edit-modal'; modal.style = 'position:fixed;inset:0;background:#20252a66;display:grid;place-items:center;padding:20px;z-index:30';
-    modal.innerHTML = `<form class="edit-dialog" style="width:min(700px,100%);max-height:90vh;overflow:auto;background:#fffdfb;border-radius:14px;padding:22px"><h2>Редактирование участника</h2><div class="fields">${[['name','ФИО'],['spirit','Духовное имя'],['email','Email'],['phone','Телефон'],['age','Возраст'],['city','Город'],['country','Страна'],['tariff','Тариф']].map(([name,label]) => `<div class="field"><label>${label}</label><input name="${name}" value="${esc(g[name])}"></div>`).join('')}<div class="field full"><label>Места через запятую</label><input name="beds" value="${esc((g.beds||[]).join(', '))}"></div><div class="field full"><label>Ссылка на чек</label><input name="receiptLink" type="url" value="${esc(g.receipts?.[0]?.url || '')}"></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><button type="button" class="ghost" data-cancel>Отмена</button><button class="primary">Сохранить</button></div></form>`;
+    modal.innerHTML = `<form class="edit-dialog" style="width:min(700px,100%);max-height:90vh;overflow:auto;background:#fffdfb;border-radius:14px;padding:22px"><h2>Редактирование участника</h2><div class="fields">${[['name','ФИО'],['spirit','Духовное имя'],['email','Email'],['phone','Телефон'],['age','Возраст'],['city','Город'],['country','Страна'],['tariff','Тариф']].map(([name,label]) => `<div class="field"><label>${label}</label><input name="${name}" value="${esc(g[name])}"></div>`).join('')}<div class="field full"><label>Места через запятую</label><input name="beds" value="${esc((g.beds||[]).join(', '))}"></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><button type="button" class="ghost" data-cancel>Отмена</button><button class="primary">Сохранить</button></div></form>`;
     document.body.appendChild(modal); modal.querySelector('[data-cancel]').onclick = () => modal.remove();
-    modal.querySelector('form').onsubmit = async event => { event.preventDefault(); const fd = new FormData(event.target), fields = ['name','spirit','email','phone','age','city','country','tariff']; fields.forEach(x => g[x] = fd.get(x)); const link = String(fd.get('receiptLink') || '').trim(); g.receipts = link ? [{name:'Ссылка на чек', url:link}] : [];
-      try { const f = await waitFirebase(); const newBeds=String(fd.get('beds')||'').split(',').map(x=>x.trim()).filter(Boolean); g.beds=newBeds; if (g.registrationId !== undefined) { const snap = await f.getDocs(f.collection(f.db, 'registrations')); const found = snap.docs.find(x => x.id === g.registrationId); if (found) { const reg = found.data(), people = [...(reg.participants || [])]; people[g.participantIndex] = {...people[g.participantIndex], ...Object.fromEntries(fields.map(x => [x, g[x]]))}; await f.updateDoc(f.doc(f.db, 'registrations', g.registrationId), {participants:people, beds:newBeds, receipts:g.receipts, updatedAt:f.serverTimestamp()}); } } await save('adminGuests', g.email || g.name, g); modal.remove(); await readCloud(); render('guests'); toast('Изменения сохранены'); } catch (error) { toast('Ошибка сохранения: ' + error.message); }
+    modal.querySelector('form').onsubmit = async event => { event.preventDefault(); const fd = new FormData(event.target), fields = ['name','spirit','email','phone','age','city','country','tariff']; fields.forEach(x => g[x] = fd.get(x));
+      try { const f = await waitFirebase(); const newBeds=String(fd.get('beds')||'').split(',').map(x=>x.trim()).filter(Boolean); g.beds=newBeds; if (g.registrationId !== undefined) { const snap = await f.getDocs(f.collection(f.db, 'registrations')); const found = snap.docs.find(x => x.id === g.registrationId); if (found) { const reg = found.data(), people = [...(reg.participants || [])]; people[g.participantIndex] = {...people[g.participantIndex], ...Object.fromEntries(fields.map(x => [x, g[x]]))}; await f.updateDoc(f.doc(f.db, 'registrations', g.registrationId), {participants:people, beds:newBeds, updatedAt:f.serverTimestamp()}); } } await save('adminGuests', g.email || g.name, g); modal.remove(); await readCloud(); render('guests'); toast('Изменения сохранены'); } catch (error) { toast('Ошибка сохранения: ' + error.message); }
     };
   }
 
@@ -130,8 +165,6 @@
     save('adminRooms',r.roomId,{...r,hotel,tariff,beds:Number(beds)||2,floor:Number(floor)||1}).then(()=>{Object.assign(r,{hotel,tariff,beds:Number(beds)||2,floor:Number(floor)||1});render('rooms');toast('Комната сохранена')}).catch(e=>toast('Ошибка сохранения: '+e.message));
   }
 
-  function payments(){ app.innerHTML=''; }
-
   function settings(){
     app.innerHTML=`<div class="panel"><div class="panel-head"><div><h2>Отели и тарифы</h2><p class="sub">Редактируйте и сохраняйте каждую комнату.</p></div><button class="primary" id="new-room">+ Добавить</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Отель</th><th>Тариф</th><th>Мест</th><th>Этаж</th><th></th></tr></thead><tbody>${d.rooms.map((r,i)=>`<tr><td><input data-i="${i}" data-k="hotel" value="${esc(r.hotel)}"></td><td><input data-i="${i}" data-k="tariff" value="${esc(r.tariff)}"></td><td><input data-i="${i}" data-k="beds" type="number" min="1" value="${r.beds}"></td><td><input data-i="${i}" data-k="floor" value="${esc(r.floor)}"></td><td><button class="edit-button save-room" data-i="${i}">Сохранить</button> <button class="edit-button delete-room" data-i="${i}">Удалить</button></td></tr>`).join('')}</tbody></table></div></div>`;
     document.querySelectorAll('[data-k]').forEach(input=>input.oninput=()=>{const r=d.rooms[Number(input.dataset.i)];r[input.dataset.k]=input.dataset.k==='beds'||input.dataset.k==='floor'?Number(input.value)||1:input.value});
@@ -142,5 +175,6 @@
 
   document.querySelector('#nav').onclick = e => { const button=e.target.closest('[data-view]'); if(button) render(button.dataset.view); };
   document.querySelector('#refresh').onclick = async () => { await readCloud(); render(document.querySelector('.nav-item.active')?.dataset.view || 'dashboard'); toast('Данные обновлены'); };
+  await requireAdmin();
   await readCloud(); render('dashboard');
 })();
