@@ -74,7 +74,7 @@
       const registration={participants,beds,receipts,status:'new',loginEmail:participants[0]?.email||'',createdAt:firebase.serverTimestamp()};
       const saved=await firebase.addDoc(firebase.collection(firebase.db,'registrations'),registration);
       success.textContent='Заявка сохранена. Для просмотра заявки используйте личный кабинет по ссылке из раздела ниже.';success.classList.add('show');button.textContent='Заявка отправлена';
-    }catch(error){console.error(error);button.disabled=false;button.textContent='Отправить заявку';success.textContent='Не удалось сохранить заявку. Проверьте подключение Firebase и попробуйте ещё раз.';success.classList.add('show')}
+    }catch(error){console.error(error);button.disabled=false;button.textContent='Отправить заявку';success.textContent='Ошибка Firebase: '+(error.code||'неизвестная ошибка')+' — '+(error.message||'проверьте правила Firestore и настройки Firebase');success.classList.add('show')}
   });
 </script>
 <script>
