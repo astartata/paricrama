@@ -103,7 +103,7 @@
   import { db } from './firebase-config.js';
   import { collection, addDoc, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
   import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
-  const accountPassword=document.createElement('input');accountPassword.name='accountPassword';accountPassword.type='password';accountPassword.minLength=6;accountPassword.required=true;accountPassword.placeholder='Пароль для личного кабинета (минимум 6 символов)';accountPassword.style='display:block;width:100%;margin:12px 0;padding:12px;border:1px solid #ded6ce;border-radius:9px';document.querySelector('.receipt-field').before(accountPassword);
+  const accountPassword=document.createElement('input');accountPassword.name='accountPassword';accountPassword.type='password';accountPassword.minLength=6;accountPassword.required=true;accountPassword.placeholder='Пароль для личного кабинета (минимум 6 символов)';accountPassword.setAttribute('aria-label','Пароль для личного кабинета');accountPassword.style='display:block;width:100%;margin:12px 0;padding:12px;border:1px solid #ded6ce;border-radius:9px';document.querySelector('.submit').after(accountPassword);accountPassword.insertAdjacentHTML('beforebegin','<label style="display:block;margin-top:12px;font-weight:700;font-size:12px">Пароль для входа в личный кабинет *</label>');
   document.querySelector('#registration').addEventListener('submit',async e=>{
     const form=e.currentTarget,button=form.querySelector('.submit'),success=document.querySelector('#success');
     if(button.disabled)return;button.disabled=true;button.textContent='Сохраняем заявку…';
@@ -120,7 +120,11 @@
   });
 </script>
 <script>
-  document.querySelector('#login-link').onclick=async()=>{const email=document.querySelector('#login-email').value.trim(),status=document.querySelector('#login-status');if(!email){status.textContent='Введите email';status.classList.add('show');return}try{const firebase=await window.firebaseReady;await firebase.sendSignInLinkToEmail(firebase.auth,email,{url:location.origin+location.pathname.replace('participant.html','cabinet.html'),handleCodeInApp:true});localStorage.setItem('emailForSignIn',email);status.textContent='Ссылка отправлена на email. Проверьте входящие и папку «Спам».';status.classList.add('show')}catch(error){console.error(error);status.textContent='Не удалось отправить ссылку. Проверьте домен и настройки Firebase.';status.classList.add('show')}};
+  const loginCard=document.querySelectorAll('.form-card')[1];
+  const participantTop=document.querySelector('.participant');
+  if(loginCard&&participantTop)participantTop.insertBefore(loginCard,participantTop.children[1]||null);
+  const loginText=loginCard?.querySelector('p');if(loginText)loginText.textContent='Если вы уже подали заявку, войдите в личный кабинет по email и паролю.';
+  const loginButton=document.querySelector('#login-link');if(loginButton)loginButton.textContent='Войти в личный кабинет';
 </script>
 </body>
 </html>
