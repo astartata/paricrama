@@ -64,15 +64,17 @@
   document.querySelectorAll('.bed-input').forEach(input=>input.addEventListener('change',()=>{const locks=readLocks();if(input.checked)locks[input.value]={type:'selection',owner:lockOwner,expiresAt:Date.now()+30*60*1000};else if(locks[input.value]?.owner===lockOwner)delete locks[input.value];writeLocks(locks);applyLocks()}));applyLocks();setInterval(applyLocks,60000);
   document.querySelector('#registration').addEventListener('submit',()=>{const locks=readLocks();document.querySelectorAll('.bed-input:checked').forEach(input=>{locks[input.value]={type:'payment',owner:lockOwner,expiresAt:Date.now()+7*24*60*60*1000}});writeLocks(locks);applyLocks()});
 </script>
-<script>
+<script type="module">
+  import { db } from './firebase-config.js';
+  import { collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
   document.querySelector('#registration').addEventListener('submit',async e=>{
     const form=e.currentTarget,button=form.querySelector('.submit'),success=document.querySelector('#success');
     if(button.disabled)return;button.disabled=true;button.textContent='Сохраняем заявку…';
     try{
-      const f=new FormData(form),names=f.getAll('name[]'),participants=names.map((name,i)=>({name,spirit:f.getAll('spirit[]')[i]||'',email:f.getAll('email[]')[i]||'',phone:f.getAll('phone[]')[i]||'',age:f.getAll('age[]')[i]||'',city:f.getAll('location[]')[i]||''})),beds=[...document.querySelectorAll('.bed-input:checked')].map(x=>x.value),firebase=await window.firebaseReady;
+      const f=new FormData(form),names=f.getAll('name[]'),participants=names.map((name,i)=>({name,spirit:f.getAll('spirit[]')[i]||'',email:f.getAll('email[]')[i]||'',phone:f.getAll('phone[]')[i]||'',age:f.getAll('age[]')[i]||'',city:f.getAll('location[]')[i]||''})),beds=[...document.querySelectorAll('.bed-input:checked')].map(x=>x.value);
       const receiptLink=f.get('receiptLink')||'',receipts=receiptLink?[{name:'Ссылка на чек',url:receiptLink}]:[];
-      const registration={participants,beds,receipts,status:'new',loginEmail:participants[0]?.email||'',createdAt:firebase.serverTimestamp()};
-      const saved=await firebase.addDoc(firebase.collection(firebase.db,'registrations'),registration);
+      const registration={participants,beds,receipts,status:'new',loginEmail:participants[0]?.email||'',createdAt:serverTimestamp()};
+      const saved=await addDoc(collection(db,'registrations'),registration);
       success.textContent='Заявка сохранена. Для просмотра заявки используйте личный кабинет по ссылке из раздела ниже.';success.classList.add('show');button.textContent='Заявка отправлена';
     }catch(error){console.error(error);button.disabled=false;button.textContent='Отправить заявку';success.textContent='Ошибка Firebase: '+(error.code||'неизвестная ошибка')+' — '+(error.message||'проверьте правила Firestore и настройки Firebase');success.classList.add('show')}
   });
