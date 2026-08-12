@@ -1,0 +1,15 @@
+# Личные данные участников — не загружать в публичный GitHub
+*.xlsx
+*.xls
+*.csv
+
+# Секреты и локальные настройки
+.env
+.env.*
+serviceAccountKey.json
+firebase-adminsdk-*.json
+firebase-debug.log
+
+# Системные файлы
+Thumbs.db
+.DS_Store
