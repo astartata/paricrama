@@ -51,7 +51,19 @@
   document.addEventListener('input',e=>{if(e.target.matches('input[name="phone[]"]'))e.target.value=formatPhone(e.target.value)});
   document.querySelector('#add-member').onclick=()=>{const item=members.querySelector('.participant-entry').cloneNode(true);item.querySelectorAll('input').forEach(x=>{x.value='';x.required=false});item.querySelectorAll('select').forEach(x=>x.selectedIndex=0);item.insertAdjacentHTML('afterbegin','<button type="button" class="remove-member">Удалить</button>');members.appendChild(item);renumber();updateCounts()};
   members.onclick=e=>{if(e.target.classList.contains('remove-member')){e.target.closest('.participant-entry').remove();renumber();updateCounts()}};
-  document.querySelector('#registration').onsubmit=e=>{e.preventDefault();};
+</script>
+<script type="module">
+  import { auth } from './firebase-config.js';
+  import { sendSignInLinkToEmail } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
+  const loginButton=document.querySelector('#login-link');
+  if(loginButton) loginButton.onclick=async()=>{
+    const email=document.querySelector('#login-email').value.trim(),status=document.querySelector('#login-status');
+    if(!email){status.textContent='Введите email';status.classList.add('show');return}
+    try{
+      await sendSignInLinkToEmail(auth,email,{url:'https://astartata.github.io/paricrama/cabinet.html',handleCodeInApp:true});
+      localStorage.setItem('emailForSignIn',email);status.textContent='Ссылка отправлена. Проверьте входящие и папку «Спам».';status.classList.add('show');
+    }catch(error){console.error(error);status.textContent='Firebase не отправил ссылку: '+(error.code||error.message);status.classList.add('show')}
+  };
 </script>
 <script>
   const pool=document.querySelector('.room-pool'), cards=[...pool.querySelectorAll('.dynamic-room')], sourceRooms=window.PARIKRAMA_DATA?.rooms||[], groups=new Map();
