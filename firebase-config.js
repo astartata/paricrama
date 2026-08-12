@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js';
-import { getFirestore } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
-import { getStorage } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-storage.js';
+import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-storage.js';
 import { getAuth } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
 
 const firebaseConfig = {
@@ -16,3 +16,5 @@ export const firebaseApp = initializeApp(firebaseConfig);
 export const db = getFirestore(firebaseApp);
 export const storage = getStorage(firebaseApp);
 export const auth = getAuth(firebaseApp);
+
+window.firebaseReady = Promise.resolve({ db, storage, collection, addDoc, serverTimestamp, ref, uploadBytes, getDownloadURL });

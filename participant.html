@@ -51,7 +51,7 @@
   document.querySelector('#receipts').onchange=e=>{document.querySelector('#receipt-list').textContent=[...e.target.files].map(f=>f.name).join(', ')||''};
   document.querySelector('#add-member').onclick=()=>{const item=members.querySelector('.participant-entry').cloneNode(true);item.querySelectorAll('input').forEach(x=>{x.value='';x.required=false});item.querySelectorAll('select').forEach(x=>x.selectedIndex=0);item.insertAdjacentHTML('afterbegin','<button type="button" class="remove-member">Удалить</button>');members.appendChild(item);renumber();updateCounts()};
   members.onclick=e=>{if(e.target.classList.contains('remove-member')){e.target.closest('.participant-entry').remove();renumber();updateCounts()}};
-  document.querySelector('#registration').onsubmit=e=>{e.preventDefault();document.querySelector('#success').classList.add('show')};
+  document.querySelector('#registration').onsubmit=e=>{e.preventDefault();};
 </script>
 <script>
   const pool=document.querySelector('.room-pool'), cards=[...pool.querySelectorAll('.dynamic-room')], sourceRooms=window.PARIKRAMA_DATA?.rooms||[], groups=new Map();
@@ -64,6 +64,21 @@
   function applyLocks(){const now=Date.now(),locks=readLocks();Object.keys(locks).forEach(k=>{if(locks[k].expiresAt<=now&&locks[k].type!=='admin')delete locks[k]});writeLocks(locks);document.querySelectorAll('.bed-input').forEach(input=>{const lock=locks[input.value],label=input.closest('.bed-sector'),small=label?.querySelector('small');if(lock&&lock.owner!==lockOwner){input.disabled=true;label.classList.add('occupied');if(small)small.textContent=lock.type==='payment'?'занято · ожидает оплату':'временно занято · '+Math.ceil((lock.expiresAt-now)/60000)+' мин'}else if(lock?.owner===lockOwner){input.checked=true;if(small)small.textContent=lock.type==='payment'?'выбрано · ожидает оплату':'выбрано · удерживается 30 мин'}})}
   document.querySelectorAll('.bed-input').forEach(input=>input.addEventListener('change',()=>{const locks=readLocks();if(input.checked)locks[input.value]={type:'selection',owner:lockOwner,expiresAt:Date.now()+30*60*1000};else if(locks[input.value]?.owner===lockOwner)delete locks[input.value];writeLocks(locks);applyLocks()}));applyLocks();setInterval(applyLocks,60000);
   document.querySelector('#registration').addEventListener('submit',()=>{const locks=readLocks();document.querySelectorAll('.bed-input:checked').forEach(input=>{locks[input.value]={type:'payment',owner:lockOwner,expiresAt:Date.now()+7*24*60*60*1000}});writeLocks(locks);applyLocks()});
+</script>
+<script>
+  document.querySelector('#registration').addEventListener('submit',async e=>{
+    const form=e.currentTarget,button=form.querySelector('.submit'),success=document.querySelector('#success');
+    if(button.disabled)return;button.disabled=true;button.textContent='Сохраняем заявку…';
+    try{
+      const f=new FormData(form),names=f.getAll('name[]'),participants=names.map((name,i)=>({name,spirit:f.getAll('spirit[]')[i]||'',email:f.getAll('email[]')[i]||'',phone:f.getAll('phone[]')[i]||'',age:f.getAll('age[]')[i]||'',city:f.getAll('location[]')[i]||''})),beds=[...document.querySelectorAll('.bed-input:checked')].map(x=>x.value),firebase=await window.firebaseReady;
+      const files=[...(document.querySelector('#receipts')?.files||[])],receipts=[];
+      for(const file of files){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_'),path=`receipts/${Date.now()}-${safe}`,snap=await firebase.uploadBytes(firebase.ref(firebase.storage,path),file);receipts.push({name:file.name,url:await firebase.getDownloadURL(snap.ref)})}
+      const registration={participants,beds,receipts,status:'new',createdAt:firebase.serverTimestamp()};
+      const saved=await firebase.addDoc(firebase.collection(firebase.db,'registrations'),registration);
+      await firebase.addDoc(firebase.collection(firebase.db,'mail'),{to:['bhaktischool.bcs@gmail.com'],message:{subject:'Новая заявка на Парикраму 2026',html:`<p>Получена новая заявка.</p><p>Участники: ${participants.map(x=>x.name).join(', ')}</p><p>Выбранные места: ${beds.join(', ')||'не выбраны'}</p><p>ID заявки: ${saved.id}</p>`},createdAt:firebase.serverTimestamp()});
+      success.textContent='Заявка сохранена. Подтверждение будет отправлено на email после настройки почтового сервиса.';success.classList.add('show');button.textContent='Заявка отправлена';
+    }catch(error){console.error(error);button.disabled=false;button.textContent='Отправить заявку';success.textContent='Не удалось сохранить заявку. Проверьте подключение Firebase и попробуйте ещё раз.';success.classList.add('show')}
+  });
 </script>
 </body>
 </html>
