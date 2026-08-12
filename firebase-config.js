@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js';
-import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
+import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-storage.js';
 import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
 
@@ -17,4 +17,4 @@ export const db = getFirestore(firebaseApp);
 export const storage = getStorage(firebaseApp);
 export const auth = getAuth(firebaseApp);
 
-window.firebaseReady = Promise.resolve({ db, storage, auth, collection, addDoc, getDocs, serverTimestamp, ref, uploadBytes, getDownloadURL, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut });
+window.firebaseReady = Promise.resolve({ db, storage, auth, collection, addDoc, getDocs, doc, setDoc, updateDoc, serverTimestamp, ref, uploadBytes, getDownloadURL, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut });
