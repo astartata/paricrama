@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Парикрама 2026 — регистрация</title>
+  <title>Ретрит 2026 — регистрация</title>
   <link rel="stylesheet" href="styles.css">
   <style>
     body{background:#f5efe8}.participant{max-width:900px;margin:0 auto;padding:28px 18px 60px}.p-head{display:flex;align-items:center;gap:13px;margin-bottom:25px}.p-logo{width:44px;height:44px;border-radius:13px;background:#d66e35;color:#fff;display:grid;place-items:center;font-size:24px}.p-head h1{font:700 25px 'Playfair Display',serif;margin:0}.p-head p{margin:3px 0;color:#8b8179;font-size:12px}.form-card{background:#fffdfb;border:1px solid #e8e0d7;border-radius:18px;padding:24px;box-shadow:0 10px 30px #4435240d;margin-bottom:16px}.form-card h2{font:700 20px 'Playfair Display',serif;margin:0 0 8px}.form-card>p{color:#80766e;font-size:12px;line-height:1.6;margin:0 0 20px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;font-weight:800;color:#665d57;text-transform:uppercase;letter-spacing:.06em}.field input,.field select,.field textarea{border:1px solid #ded6ce;border-radius:9px;padding:12px;background:#fff;font:13px Manrope}.field textarea{min-height:78px;resize:vertical}.submit{width:100%;padding:13px;border:0;border-radius:10px;background:#d66e35;color:#fff;font:700 13px Manrope;cursor:pointer;margin-top:10px}.privacy{font-size:11px!important;color:#91867d!important;margin-top:14px!important}.success{display:none;background:#e9f5ee;color:#39785c;border-radius:10px;padding:13px;font-size:12px;margin-top:14px}.success.show{display:block}
@@ -17,9 +17,11 @@
 </head>
 <body>
 <main class="participant">
-  <header class="p-head"><div class="p-logo">ॐ</div><div><h1>Парикрама 2026</h1><p>Регистрация участников</p></div></header>
+  <header class="p-head"><div class="p-logo">ॐ</div><div><h1>Ретрит 2026</h1><p>Регистрация участников</p></div></header>
 
-  <section class="form-card">
+  <details class="form-card room-base">
+    <summary>База комнат</summary>
+    <div>
     <h2>База комнат</h2>
     <p>Выберите места из общего пула. Каждая комната показана отдельным квадратом, а сектора внутри — это доступные места.</p>
     <div class="room-pool">
@@ -29,7 +31,8 @@
       <article class="room-box"><div class="room-box-head"><div><div class="room-id">04_RUKM</div><div class="room-meta">Рукмани Дхам<br>Комфорт+ · этаж 2</div></div><span class="badge green">4 из 4 свободно</span></div><div class="room-sectors"><label class="bed-sector"><input class="bed-input" type="checkbox" name="beds[]" value="04_RUKM-1"><strong>Место 1</strong><small>свободно · 800 €</small></label><label class="bed-sector"><input class="bed-input" type="checkbox" name="beds[]" value="04_RUKM-2"><strong>Место 2</strong><small>свободно · 800 €</small></label><label class="bed-sector"><input class="bed-input" type="checkbox" name="beds[]" value="04_RUKM-3"><strong>Место 3</strong><small>свободно · 800 €</small></label><label class="bed-sector"><input class="bed-input" type="checkbox" name="beds[]" value="04_RUKM-4"><strong>Место 4</strong><small>свободно · 800 €</small></label></div></article>
     </div>
     <div class="pool-summary"><span>Выбрано мест: <strong id="bed-count">0</strong></span><span>Участников в заявке: <strong id="member-count">1</strong></span></div>
-  </section>
+    </div>
+  </details>
 
   <section class="form-card">
     <h2>Заявка на участие</h2>
@@ -37,7 +40,7 @@
     <form id="registration"><div id="group-members"><div class="participant-entry"><h3>Участник 1</h3><div class="fields"><div class="field"><label>ФИО *</label><input name="name[]" required placeholder="Фамилия и имя"></div><div class="field"><label>Духовное имя (если есть)</label><input name="spirit[]"></div><div class="field"><label>Ваша электронная почта *</label><input name="email[]" type="email" required></div><div class="field"><label>Ваш номер телефона для связи *</label><input name="phone[]" type="tel" inputmode="tel" required placeholder="+7 (000) 000-00-00"></div><div class="field"><label>Ваш возраст *</label><input name="age[]" type="number" min="1" max="120" required></div><div class="field"><label>Ваш город проживания *</label><input name="location[]" required></div></div></div></div><p class="member-count">Добавьте остальных участников группы этой же кнопкой.</p><button type="button" class="add-member" id="add-member">+ Добавить участника</button><div class="field receipt-field"><label>Ссылка на чек</label><input id="receipt-link" name="receiptLink" type="url" placeholder="https://drive.google.com/... или https://disk.yandex.ru/..."><small>Загрузите чек в Google Drive или Яндекс Диск и вставьте ссылку с доступом «по ссылке».</small></div><button class="submit">Отправить заявку</button><p class="privacy">Нажимая кнопку, вы соглашаетесь на обработку персональных данных для организации Парикрамы.</p><div class="success" id="success">Заявка сохранена. Ссылка для проверки статуса будет отправлена на email.</div></form>
   </section>
 
-  <section class="form-card"><h2>Уже зарегистрированы?</h2><p>Введите email, чтобы получить ссылку для входа в личный кабинет.</p><div class="field"><label>Email</label><input id="login-email" type="email" placeholder="your@email.com"></div><button id="login-link" class="ghost" style="margin-top:12px">Получить ссылку</button><div class="success" id="login-status"></div></section>
+  <section class="form-card"><h2>Уже зарегистрированы?</h2><p>Введите логин и пароль для входа в личный кабинет.</p><div class="field"><label>Логин (email)</label><input id="login-email" type="email" autocomplete="username" placeholder="your@email.com"></div><div class="field" style="margin-top:10px"><label>Пароль</label><input id="login-password" type="password" autocomplete="current-password" minlength="6" placeholder="Пароль"></div><button id="login-link" class="ghost" style="margin-top:12px">Войти в личный кабинет</button><div class="success" id="login-status"></div></section>
 </main>
 <script src="data.js"></script><script src="rooms-data.js"></script><script type="module" src="firebase-config.js"></script><script>
   const roomPool=document.querySelector('.room-pool');
@@ -55,7 +58,7 @@
 <script type="module">
   import { auth } from './firebase-config.js';
   import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
-  const loginPassword=document.createElement('input');loginPassword.id='login-password';loginPassword.type='password';loginPassword.placeholder='Пароль';loginPassword.minLength=6;loginPassword.style='display:block;width:100%;margin-top:8px;padding:12px;border:1px solid #ded6ce;border-radius:9px';document.querySelector('#login-link').before(loginPassword);const loginButton=document.querySelector('#login-link');
+  const loginPassword=document.querySelector('#login-password'),loginButton=document.querySelector('#login-link');
   if(loginButton) loginButton.onclick=async()=>{
     const email=document.querySelector('#login-email').value.trim(),status=document.querySelector('#login-status');
     if(!email){status.textContent='Введите email';status.classList.add('show');return}
@@ -85,6 +88,7 @@
   }
   const escParticipant=x=>String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
   document.querySelectorAll('.bed-input').forEach(input=>input.addEventListener('change',async()=>{try{const id=input.value;if(input.checked)await setDoc(doc(db,'placeLocks',id),{type:'selection',owner,expiresAt:Date.now()+30*60*1000},{merge:true});else{const s=await getDocs(collection(db,'placeLocks'));const lock=s.docs.find(x=>x.id===id)?.data();if(lock?.owner===owner)await deleteDoc(doc(db,'placeLocks',id))}}catch(e){input.checked=!input.checked;console.error(e)}}));
+  document.querySelectorAll('.bed-sector').forEach(label=>{const input=label.querySelector('.bed-input');if(!input)return;label.addEventListener('click',event=>{if(input.disabled||event.target===input)return;event.preventDefault();input.checked=!input.checked;input.dispatchEvent(new Event('change',{bubbles:true}))})});
   await syncPlaces();setInterval(syncPlaces,15000);
 </script>
 <script>
@@ -97,7 +101,6 @@
   const readLocks=()=>{try{return JSON.parse(localStorage.getItem(lockKey)||'{}')}catch{return {}}};const writeLocks=x=>localStorage.setItem(lockKey,JSON.stringify(x));const lockFor=input=>readLocks()[input.value];
   function applyLocks(){const now=Date.now(),locks=readLocks();Object.keys(locks).forEach(k=>{if(locks[k].expiresAt<=now&&locks[k].type!=='admin')delete locks[k]});writeLocks(locks);document.querySelectorAll('.bed-input').forEach(input=>{const lock=locks[input.value],label=input.closest('.bed-sector'),small=label?.querySelector('small');if(lock&&lock.owner!==lockOwner){input.disabled=true;label.classList.add('occupied');if(small)small.textContent=lock.type==='payment'?'занято · ожидает оплату':'временно занято · '+Math.ceil((lock.expiresAt-now)/60000)+' мин'}else if(lock?.owner===lockOwner){input.checked=true;if(small)small.textContent=lock.type==='payment'?'выбрано · ожидает оплату':'выбрано · удерживается 30 мин'}})}
   document.querySelectorAll('.bed-input').forEach(input=>input.addEventListener('change',()=>{const locks=readLocks();if(input.checked)locks[input.value]={type:'selection',owner:lockOwner,expiresAt:Date.now()+30*60*1000};else if(locks[input.value]?.owner===lockOwner)delete locks[input.value];writeLocks(locks);applyLocks()}));applyLocks();setInterval(applyLocks,60000);
-  document.querySelector('#registration').addEventListener('submit',()=>{const locks=readLocks();document.querySelectorAll('.bed-input:checked').forEach(input=>{locks[input.value]={type:'payment',owner:lockOwner,expiresAt:Date.now()+7*24*60*60*1000}});writeLocks(locks);applyLocks()});
 </script>
 <script type="module">
   import { db } from './firebase-config.js';
@@ -120,11 +123,19 @@
   });
 </script>
 <script>
-  const loginCard=document.querySelectorAll('.form-card')[1];
-  const participantTop=document.querySelector('.participant');
-  if(loginCard&&participantTop)participantTop.insertBefore(loginCard,participantTop.children[1]||null);
-  const loginText=loginCard?.querySelector('p');if(loginText)loginText.textContent='Если вы уже подали заявку, войдите в личный кабинет по email и паролю.';
-  const loginButton=document.querySelector('#login-link');if(loginButton)loginButton.textContent='Войти в личный кабинет';
+  const loginCard=document.querySelector('#login-email')?.closest('.form-card');
+  const registrationCard=document.querySelector('#registration')?.closest('.form-card');
+  if(loginCard&&registrationCard)registrationCard.after(loginCard);
+</script>
+<script>
+  document.querySelector('.receipt-field')?.remove();
+  document.querySelector('.room-base h2')?.remove();
+  const loginCard2=document.querySelector('#login-email')?.closest('.form-card');
+  const registrationCard2=document.querySelector('#registration')?.closest('.form-card');
+  const roomBase=document.querySelector('.room-base');
+  if(loginCard2&&registrationCard2)registrationCard2.after(loginCard2);
+  if(roomBase&&registrationCard2)registrationCard2.querySelector('.submit').before(roomBase);
+  if(roomBase)roomBase.open=false;
 </script>
 </body>
 </html>

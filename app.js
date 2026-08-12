@@ -41,13 +41,13 @@
   function placeInfo(room, n, registrations, locks) {
     const lock = locks[room.roomId + '-' + n];
     if (lock && lock.type === 'admin') return {state:'admin', text:'заблокировано · ' + (lock.name || 'администратор'), note:lock.note || ''};
-    if (lock && (lock.type === 'selection' || lock.type === 'payment') && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:(lock.type === 'payment' ? 'занято · ожидает оплату' : 'временно выбрано') + ' · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
+    if (lock && (lock.type === 'selection' || lock.type === 'payment') && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:(lock.type === 'payment' ? 'Заселён · ожидает оплату' : 'Временно выбрано') + ' · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
     for (const reg of registrations || []) {
       const data = reg.data();
-      if ((data.beds || []).includes(room.roomId + '-' + n)) return {state:'busy', text:'занято · ' + (data.participants || []).map(x => x.name).filter(Boolean).join(', '), note:data.loginEmail || ''};
+      if ((data.beds || []).includes(room.roomId + '-' + n)) return {state:'busy', text:'Заселён · ' + (data.participants || []).map(x => x.name).filter(Boolean).join(', '), note:data.loginEmail || ''};
     }
     const name = room['g' + n];
-    return name ? {state:'busy', text:'занято · ' + name, note:''} : {state:'free', text:'свободно', note:''};
+    return name ? {state:'busy', text:'Заселён · ' + name, note:''} : {state:'free', text:'Свободно', note:''};
   }
 
   async function cloudPlacement() {
@@ -59,7 +59,7 @@
 
   function render(view = 'dashboard') {
     document.querySelectorAll('.nav-item').forEach(x => x.classList.toggle('active', x.dataset.view === view));
-    title.textContent = ({dashboard:'Обзор', guests:'Участники', rooms:'Размещение', payments:'Оплаты', settings:'Настройки года'}[view] || view);
+    title.textContent = ({dashboard:'Дашборд', guests:'Участники', rooms:'Размещение', payments:'Оплаты', settings:'Настройки'}[view] || view);
     ({dashboard, guests, rooms, payments, settings}[view] || dashboard)();
   }
 
@@ -72,9 +72,31 @@
 
   function guests() {
     const list = d.guests.filter(x => !x.refusal);
-    app.innerHTML = `<div class="panel"><div class="panel-head"><h2>Участники</h2><button class="primary" id="reload-guests">Обновить</button></div><div class="table-wrap"><table class="table"><thead><tr><th>ФИО</th><th>Email</th><th>Город / страна</th><th>Место</th><th>Чек</th><th></th></tr></thead><tbody>${list.map((g, i) => `<tr><td class="name">${esc(g.name)}</td><td>${esc(g.email)}</td><td>${esc(g.city)} / ${esc(g.country)}</td><td>${esc((g.beds || []).join(', '))}</td><td>${g.receipts?.[0]?.url ? `<a class="link" href="${esc(g.receipts[0].url)}" target="_blank">Открыть</a>` : '—'}</td><td><button class="edit-button edit-guest" data-index="${d.guests.indexOf(g)}">Редактировать</button></td></tr>`).join('')}</tbody></table></div></div>`;
+    app.innerHTML = `<div class="panel"><div class="panel-head"><h2>Участники</h2><button class="primary" id="reload-guests">Обновить</button></div><div class="table-wrap"><table class="table"><thead><tr><th>ФИО</th><th>Email</th><th>Город / страна</th><th>Место</th><th>Чек</th><th></th></tr></thead><tbody>${list.map((g, i) => `<tr><td class="name">${esc(g.name)}</td><td>${esc(g.email)}</td><td>${esc(g.city)} / ${esc(g.country)}</td><td>${esc((g.beds || []).join(', '))}</td><td>${g.receipts?.[0]?.url ? `<a class="link" href="${esc(g.receipts[0].url)}" target="_blank">Открыть</a>` : '—'}</td><td><button class="edit-button edit-guest" data-index="${d.guests.indexOf(g)}">Редактировать</button> <button class="edit-button delete-guest" data-index="${d.guests.indexOf(g)}">Удалить</button></td></tr>`).join('')}</tbody></table></div></div>`;
     document.querySelector('#reload-guests').onclick = async () => { await readCloud(); render('guests'); };
     document.querySelectorAll('.edit-guest').forEach(button => button.onclick = () => editGuest(d.guests[Number(button.dataset.index)]));
+    document.querySelectorAll('.delete-guest').forEach(button => button.onclick = () => deleteGuest(d.guests[Number(button.dataset.index)]));
+  }
+
+  async function deleteGuest(g) {
+    if (!confirm('Удалить участника ' + (g.name || g.email || '') + '?')) return;
+    try {
+      const f = await waitFirebase();
+      if (g.registrationId) {
+        const registrationSnap = await f.getDocs(f.collection(f.db, 'registrations'));
+        const registration = registrationSnap.docs.find(snap => snap.id === g.registrationId);
+        const people = registration ? (registration.data().participants || []) : [];
+        if (people.length > 1) {
+          people.splice(Number(g.participantIndex), 1);
+          await f.updateDoc(f.doc(f.db, 'registrations', g.registrationId), {participants: people, updatedAt: f.serverTimestamp()});
+        } else {
+          await f.deleteDoc(f.doc(f.db, 'registrations', g.registrationId));
+          await Promise.all((g.beds || []).map(bed => f.deleteDoc(f.doc(f.db, 'placeLocks', bed))));
+        }
+      }
+      await f.deleteDoc(f.doc(f.db, 'adminGuests', key(g.email || g.name)));
+      await readCloud(); render('guests'); toast('Участник удалён');
+    } catch (error) { toast('Ошибка удаления: ' + error.message); }
   }
 
   function editGuest(g) {
@@ -88,7 +110,16 @@
 
   async function rooms() {
     let placement; try { placement = await cloudPlacement(); } catch { placement = {registrations:[], locks:{}}; }
-    app.innerHTML = `<div class="panel"><div class="panel-head"><div><h2>База комнат и мест</h2><p class="sub">Занятые места и блокировки загружены из Firebase.</p></div><button class="primary" id="reload-rooms">Обновить</button></div><div class="grid room-grid">${d.rooms.map((r, ri) => `<div class="room-card"><div class="room-top"><div><div class="room-id">${esc(r.roomId)}</div><div class="room-hotel">${esc(r.hotel)} · ${esc(r.tariff)}</div></div><button class="edit-button edit-room" data-room="${ri}">Изменить</button></div><div class="room-sectors" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${Array.from({length:Number(r.beds)||2}, (_, i) => { const p=placeInfo(r,i+1,placement.registrations,placement.locks); return `<div class="admin-place" style="border:1px solid var(--line);border-radius:9px;padding:10px;background:${p.state==='busy'?'#f1f0ed':p.state==='admin'?'#fff0e0':'#fff'}"><b>Место ${i+1}</b><div class="sub">${esc(p.text)}</div>${p.note?`<div class="sub">${esc(p.note)}</div>`:''}<button class="edit-button toggle-lock" data-room="${ri}" data-place="${i+1}">${p.state==='admin'?'Снять блокировку':'Заблокировать'}</button></div>`}).join('')}</div></div>`).join('')}</div></div>`;
+    const roomCards = d.rooms.map((r, ri) => {
+      const places = Array.from({length:Number(r.beds)||2}, (_, i) => {
+        const p = placeInfo(r, i + 1, placement.registrations, placement.locks);
+        const free = p.state === 'free';
+        return `<div class="admin-place ${free ? 'admin-place-free' : 'admin-place-busy'}" style="border:1px solid var(--line);border-radius:9px;padding:10px;background:${p.state==='busy'?'#f1f0ed':p.state==='admin'?'#fff0e0':'#fff'}"><b>Место ${i+1}</b><div class="sub">${esc(p.text)}</div>${p.note?`<div class="sub">${esc(p.note)}</div>`:''}<button class="edit-button toggle-lock" data-room="${ri}" data-place="${i+1}">${p.state==='admin'?'Снять блокировку':'Заблокировать'}</button></div>`;
+      }).join('');
+      const freeCount = Array.from({length:Number(r.beds)||2}, (_, i) => placeInfo(r, i + 1, placement.registrations, placement.locks)).filter(p => p.state === 'free').length;
+      return `<div class="room-card"><div class="room-top"><div><div class="room-id">${esc(r.roomId)}</div><div class="room-hotel">${esc(r.hotel)} · ${esc(r.tariff)}</div></div><span class="badge ${freeCount ? 'green' : 'rose'}">${freeCount} из ${Number(r.beds)||2} свободно</span></div><div class="room-sectors" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${places}</div><button class="edit-button edit-room" data-room="${ri}" style="margin-top:12px">Изменить номер</button></div>`;
+    }).join('');
+    app.innerHTML = `<div class="panel"><div class="panel-head"><div><h2>База комнат</h2><p class="sub">Номера показаны так же, как участнику: каждое место отмечено как «Заселён» с именем или «Свободно».</p></div><button class="primary" id="reload-rooms">Обновить</button></div><div class="grid room-grid">${roomCards}</div></div>`;
     document.querySelector('#reload-rooms').onclick = async () => { await readCloud(); render('rooms'); };
     document.querySelectorAll('.edit-room').forEach(b => b.onclick = () => editRoom(d.rooms[Number(b.dataset.room)]));
     document.querySelectorAll('.toggle-lock').forEach(b => b.onclick = async () => { const r=d.rooms[Number(b.dataset.room)], n=Number(b.dataset.place), id=r.roomId+'-'+n, existing=placement.locks[id]; try { if (existing?.type === 'admin') await save('placeLocks', id, {type:'released', releasedAt:new Date().toISOString()}); else { const name=prompt('Кто блокирует место? Имя и фамилия:',''); if (name === null) return; const note=prompt('Комментарий:','') || ''; await save('placeLocks', id, {type:'admin',name:name || 'Команда',note,roomId:r.roomId,place:n}); } render('rooms'); toast('Изменения сохранены'); } catch(error) { toast('Ошибка: '+error.message); } });
@@ -99,7 +130,7 @@
     save('adminRooms',r.roomId,{...r,hotel,tariff,beds:Number(beds)||2,floor:Number(floor)||1}).then(()=>{Object.assign(r,{hotel,tariff,beds:Number(beds)||2,floor:Number(floor)||1});render('rooms');toast('Комната сохранена')}).catch(e=>toast('Ошибка сохранения: '+e.message));
   }
 
-  function payments(){ app.innerHTML='<div class="panel"><h2>Оплаты</h2><p class="sub">Оплаты загружаются из заявок и чеков.</p></div>'; }
+  function payments(){ app.innerHTML=''; }
 
   function settings(){
     app.innerHTML=`<div class="panel"><div class="panel-head"><div><h2>Отели и тарифы</h2><p class="sub">Редактируйте и сохраняйте каждую комнату.</p></div><button class="primary" id="new-room">+ Добавить</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Отель</th><th>Тариф</th><th>Мест</th><th>Этаж</th><th></th></tr></thead><tbody>${d.rooms.map((r,i)=>`<tr><td><input data-i="${i}" data-k="hotel" value="${esc(r.hotel)}"></td><td><input data-i="${i}" data-k="tariff" value="${esc(r.tariff)}"></td><td><input data-i="${i}" data-k="beds" type="number" min="1" value="${r.beds}"></td><td><input data-i="${i}" data-k="floor" value="${esc(r.floor)}"></td><td><button class="edit-button save-room" data-i="${i}">Сохранить</button> <button class="edit-button delete-room" data-i="${i}">Удалить</button></td></tr>`).join('')}</tbody></table></div></div>`;
