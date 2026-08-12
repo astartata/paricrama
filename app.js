@@ -29,8 +29,9 @@
         const data = snap.data();
         let room = d.rooms.find(x => x.roomId === data.roomId || key(x.roomId) === snap.id);
         if (data.deleted) { if (room) room.deleted = true; return; }
-        if (!room) { room = {...data, roomId: data.roomId || snap.id, beds: Number(data.beds) || 2}; d.rooms.push(room); }
-        else Object.assign(room, data);
+        const cleanRoom={...data, roomId:data.roomId||snap.id, beds:Number(data.beds)||2, g1:'', g2:'', g3:'', g4:''};
+        if (!room) { room = cleanRoom; d.rooms.push(room); }
+        else Object.assign(room, cleanRoom);
       });
       d.rooms = d.rooms.filter(x => !x.deleted);
       return registrations;
@@ -40,6 +41,7 @@
   function placeInfo(room, n, registrations, locks) {
     const lock = locks[room.roomId + '-' + n];
     if (lock && lock.type === 'admin') return {state:'admin', text:'заблокировано · ' + (lock.name || 'администратор'), note:lock.note || ''};
+    if (lock && (lock.type === 'selection' || lock.type === 'payment') && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:(lock.type === 'payment' ? 'занято · ожидает оплату' : 'временно выбрано') + ' · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
     for (const reg of registrations || []) {
       const data = reg.data();
       if ((data.beds || []).includes(room.roomId + '-' + n)) return {state:'busy', text:'занято · ' + (data.participants || []).map(x => x.name).filter(Boolean).join(', '), note:data.loginEmail || ''};
@@ -77,10 +79,10 @@
 
   function editGuest(g) {
     const modal = document.createElement('div'); modal.className = 'edit-modal'; modal.style = 'position:fixed;inset:0;background:#20252a66;display:grid;place-items:center;padding:20px;z-index:30';
-    modal.innerHTML = `<form class="edit-dialog" style="width:min(700px,100%);max-height:90vh;overflow:auto;background:#fffdfb;border-radius:14px;padding:22px"><h2>Редактирование участника</h2><div class="fields">${[['name','ФИО'],['spirit','Духовное имя'],['email','Email'],['phone','Телефон'],['age','Возраст'],['city','Город'],['country','Страна'],['tariff','Тариф']].map(([name,label]) => `<div class="field"><label>${label}</label><input name="${name}" value="${esc(g[name])}"></div>`).join('')}<div class="field full"><label>Ссылка на чек</label><input name="receiptLink" type="url" value="${esc(g.receipts?.[0]?.url || '')}"></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><button type="button" class="ghost" data-cancel>Отмена</button><button class="primary">Сохранить</button></div></form>`;
+    modal.innerHTML = `<form class="edit-dialog" style="width:min(700px,100%);max-height:90vh;overflow:auto;background:#fffdfb;border-radius:14px;padding:22px"><h2>Редактирование участника</h2><div class="fields">${[['name','ФИО'],['spirit','Духовное имя'],['email','Email'],['phone','Телефон'],['age','Возраст'],['city','Город'],['country','Страна'],['tariff','Тариф']].map(([name,label]) => `<div class="field"><label>${label}</label><input name="${name}" value="${esc(g[name])}"></div>`).join('')}<div class="field full"><label>Места через запятую</label><input name="beds" value="${esc((g.beds||[]).join(', '))}"></div><div class="field full"><label>Ссылка на чек</label><input name="receiptLink" type="url" value="${esc(g.receipts?.[0]?.url || '')}"></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><button type="button" class="ghost" data-cancel>Отмена</button><button class="primary">Сохранить</button></div></form>`;
     document.body.appendChild(modal); modal.querySelector('[data-cancel]').onclick = () => modal.remove();
     modal.querySelector('form').onsubmit = async event => { event.preventDefault(); const fd = new FormData(event.target), fields = ['name','spirit','email','phone','age','city','country','tariff']; fields.forEach(x => g[x] = fd.get(x)); const link = String(fd.get('receiptLink') || '').trim(); g.receipts = link ? [{name:'Ссылка на чек', url:link}] : [];
-      try { const f = await waitFirebase(); if (g.registrationId !== undefined) { const snap = await f.getDocs(f.collection(f.db, 'registrations')); const found = snap.docs.find(x => x.id === g.registrationId); if (found) { const reg = found.data(), people = [...(reg.participants || [])]; people[g.participantIndex] = {...people[g.participantIndex], ...Object.fromEntries(fields.map(x => [x, g[x]]))}; await f.updateDoc(f.doc(f.db, 'registrations', g.registrationId), {participants:people, receipts:g.receipts, updatedAt:f.serverTimestamp()}); } } await save('adminGuests', g.email || g.name, g); modal.remove(); await readCloud(); render('guests'); toast('Изменения сохранены'); } catch (error) { toast('Ошибка сохранения: ' + error.message); }
+      try { const f = await waitFirebase(); const newBeds=String(fd.get('beds')||'').split(',').map(x=>x.trim()).filter(Boolean); g.beds=newBeds; if (g.registrationId !== undefined) { const snap = await f.getDocs(f.collection(f.db, 'registrations')); const found = snap.docs.find(x => x.id === g.registrationId); if (found) { const reg = found.data(), people = [...(reg.participants || [])]; people[g.participantIndex] = {...people[g.participantIndex], ...Object.fromEntries(fields.map(x => [x, g[x]]))}; await f.updateDoc(f.doc(f.db, 'registrations', g.registrationId), {participants:people, beds:newBeds, receipts:g.receipts, updatedAt:f.serverTimestamp()}); } } await save('adminGuests', g.email || g.name, g); modal.remove(); await readCloud(); render('guests'); toast('Изменения сохранены'); } catch (error) { toast('Ошибка сохранения: ' + error.message); }
     };
   }
 

@@ -54,16 +54,34 @@
 </script>
 <script type="module">
   import { auth } from './firebase-config.js';
-  import { sendSignInLinkToEmail } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
-  const loginButton=document.querySelector('#login-link');
+  import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
+  const loginPassword=document.createElement('input');loginPassword.id='login-password';loginPassword.type='password';loginPassword.placeholder='Пароль';loginPassword.minLength=6;loginPassword.style='display:block;width:100%;margin-top:8px;padding:12px;border:1px solid #ded6ce;border-radius:9px';document.querySelector('#login-link').before(loginPassword);const loginButton=document.querySelector('#login-link');
   if(loginButton) loginButton.onclick=async()=>{
     const email=document.querySelector('#login-email').value.trim(),status=document.querySelector('#login-status');
     if(!email){status.textContent='Введите email';status.classList.add('show');return}
     try{
-      await sendSignInLinkToEmail(auth,email,{url:'https://astartata.github.io/paricrama/cabinet.html',handleCodeInApp:true});
-      localStorage.setItem('emailForSignIn',email);status.textContent='Ссылка отправлена. Проверьте входящие и папку «Спам».';status.classList.add('show');
-    }catch(error){console.error(error);status.textContent='Firebase не отправил ссылку: '+(error.code||error.message);status.classList.add('show')}
+      const password=loginPassword.value;
+      if(!password||password.length<6){status.textContent='Пароль должен быть не короче 6 символов';status.classList.add('show');return}
+      try{await createUserWithEmailAndPassword(auth,email,password)}catch(e){if(e.code!=='auth/email-already-in-use')throw e;await signInWithEmailAndPassword(auth,email,password)}
+      status.textContent='Вход выполнен. Откройте личный кабинет.';status.classList.add('show');location.href='cabinet.html';
+    }catch(error){console.error(error);status.textContent='Не удалось войти: '+(error.code||error.message);status.classList.add('show')}
   };
+</script>
+<script type="module">
+  import { db } from './firebase-config.js';
+  import { collection, getDocs, doc, setDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
+  const owner=sessionStorage.getItem('place-owner')||crypto.randomUUID();sessionStorage.setItem('place-owner',owner);
+  async function syncPlaces(){
+    try{
+      const [regs,locks,rooms]=await Promise.all([getDocs(collection(db,'registrations')),getDocs(collection(db,'placeLocks')),getDocs(collection(db,'adminRooms'))]);
+      const occupied=new Set();regs.forEach(s=>(s.data().beds||[]).forEach(x=>occupied.add(x)));const admin=new Set();const temporary=new Set();locks.forEach(s=>{const lock=s.data();if(lock.type==='admin')admin.add(s.id);if((lock.type==='selection'||lock.type==='payment')&&lock.expiresAt>Date.now()&&lock.owner!==owner)temporary.add(s.id)});
+      rooms.forEach(s=>{const r=s.data();const card=[...document.querySelectorAll('.dynamic-room')].find(x=>x.querySelector('.room-id')?.textContent===r.roomId);if(r.deleted){card?.remove();return}if(card){const meta=card.querySelector('.room-meta');if(meta)meta.innerHTML=escParticipant(r.hotel)+'<br>'+escParticipant(r.tariff)}(r.blockedPlaces||[]).forEach(n=>admin.add(r.roomId+'-'+n))});
+      document.querySelectorAll('.bed-input').forEach(input=>{const label=input.closest('.bed-sector'),id=input.value;if(occupied.has(id)||admin.has(id)||temporary.has(id)){input.checked=false;input.disabled=true;label?.remove()}else{input.disabled=false}});
+    }catch(e){console.error('Не удалось обновить места',e)}
+  }
+  const escParticipant=x=>String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  document.querySelectorAll('.bed-input').forEach(input=>input.addEventListener('change',async()=>{try{const id=input.value;if(input.checked)await setDoc(doc(db,'placeLocks',id),{type:'selection',owner,expiresAt:Date.now()+30*60*1000},{merge:true});else{const s=await getDocs(collection(db,'placeLocks'));const lock=s.docs.find(x=>x.id===id)?.data();if(lock?.owner===owner)await deleteDoc(doc(db,'placeLocks',id))}}catch(e){input.checked=!input.checked;console.error(e)}}));
+  await syncPlaces();setInterval(syncPlaces,15000);
 </script>
 <script>
   const pool=document.querySelector('.room-pool'), cards=[...pool.querySelectorAll('.dynamic-room')], sourceRooms=window.PARIKRAMA_DATA?.rooms||[], groups=new Map();
@@ -80,18 +98,20 @@
 <script type="module">
   import { db } from './firebase-config.js';
   import { collection, addDoc, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
-  import { sendSignInLinkToEmail } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
+  import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
+  const accountPassword=document.createElement('input');accountPassword.name='accountPassword';accountPassword.type='password';accountPassword.minLength=6;accountPassword.required=true;accountPassword.placeholder='Пароль для личного кабинета (минимум 6 символов)';accountPassword.style='display:block;width:100%;margin:12px 0;padding:12px;border:1px solid #ded6ce;border-radius:9px';document.querySelector('.receipt-field').before(accountPassword);
   document.querySelector('#registration').addEventListener('submit',async e=>{
     const form=e.currentTarget,button=form.querySelector('.submit'),success=document.querySelector('#success');
     if(button.disabled)return;button.disabled=true;button.textContent='Сохраняем заявку…';
     try{
-      const f=new FormData(form),names=f.getAll('name[]'),participants=names.map((name,i)=>({name,spirit:f.getAll('spirit[]')[i]||'',email:f.getAll('email[]')[i]||'',phone:f.getAll('phone[]')[i]||'',age:f.getAll('age[]')[i]||'',city:f.getAll('location[]')[i]||''})),beds=[...document.querySelectorAll('.bed-input:checked')].map(x=>x.value);
+      const f=new FormData(form),names=f.getAll('name[]'),participants=names.map((name,i)=>({name,spirit:f.getAll('spirit[]')[i]||'',email:f.getAll('email[]')[i]||'',phone:f.getAll('phone[]')[i]||'',age:f.getAll('age[]')[i]||'',city:f.getAll('location[]')[i]||''})),beds=[...document.querySelectorAll('.bed-input:checked')].map(x=>x.value),password=String(f.get('accountPassword')||'');
+      if(password.length<6)throw new Error('Пароль должен быть не короче 6 символов');
+      try{await createUserWithEmailAndPassword((await import('./firebase-config.js')).auth,participants[0].email,password)}catch(e){if(e.code!=='auth/email-already-in-use')throw e;await signInWithEmailAndPassword((await import('./firebase-config.js')).auth,participants[0].email,password)}
       const receiptLink=f.get('receiptLink')||'',receipts=receiptLink?[{name:'Ссылка на чек',url:receiptLink}]:[];
       const registration={participants,beds,receipts,status:'new',loginEmail:participants[0]?.email||'',createdAt:serverTimestamp()};
       const saved=await addDoc(collection(db,'registrations'),registration);
       await Promise.all(beds.map(key=>setDoc(doc(db,'placeLocks',key),{type:'payment',name:participants.map(x=>x.name).filter(Boolean).join(', '),email:participants[0]?.email||'',registrationId:saved.id,expiresAt:Date.now()+7*24*60*60*1000,updatedAt:serverTimestamp()},{merge:true})));
-      let mail='';try{await sendSignInLinkToEmail((await import('./firebase-config.js')).auth,participants[0].email,{url:location.origin+location.pathname.replace('participant.html','cabinet.html'),handleCodeInApp:true});localStorage.setItem('emailForSignIn',participants[0].email);mail=' Ссылка для входа отправлена на email.'}catch(mailError){console.warn('Login link was not sent',mailError);mail=' Вход в кабинет можно запросить ниже вручную.'}
-      success.textContent='Заявка сохранена.'+mail;success.classList.add('show');button.textContent='Заявка отправлена';
+      success.textContent='Заявка сохранена. Теперь входите в личный кабинет по email и паролю.';success.classList.add('show');button.textContent='Заявка отправлена';
     }catch(error){console.error(error);button.disabled=false;button.textContent='Отправить заявку';success.textContent='Ошибка Firebase: '+(error.code||'неизвестная ошибка')+' — '+(error.message||'проверьте правила Firestore и настройки Firebase');success.classList.add('show')}
   });
 </script>
