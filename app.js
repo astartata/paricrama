@@ -59,8 +59,14 @@
   async function readCloud() {
     try {
       const f = await waitFirebase();
-      const adminGuestDocs = await f.getDocs(f.collection(f.db, 'adminGuests'));
       const deletedGuests = new Map();
+      let adminGuestDocs;
+      try {
+        adminGuestDocs = await f.getDocs(f.collection(f.db, 'adminGuests'));
+      } catch (error) {
+        console.warn('Не удалось загрузить вспомогательные записи adminGuests:', error);
+        adminGuestDocs = {forEach: () => {}};
+      }
       adminGuestDocs.forEach(snap => {
         const guest = snap.data();
         if (guest.deleted || guest.refusal) deletedGuests.set(snap.id, Date.parse(guest.deletedAt) || Infinity);
@@ -81,7 +87,13 @@
         });
       });
       d.guests = guests;
-      const roomDocs = await f.getDocs(f.collection(f.db, 'adminRooms'));
+      let roomDocs;
+      try {
+        roomDocs = await f.getDocs(f.collection(f.db, 'adminRooms'));
+      } catch (error) {
+        console.warn('Не удалось загрузить настройки комнат:', error);
+        roomDocs = {forEach: () => {}};
+      }
       const rooms = baseRooms.map(room => ({...room}));
       roomDocs.forEach(snap => {
         const data = snap.data();
