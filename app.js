@@ -298,7 +298,6 @@
     document.querySelector('#new-room').onclick=async()=>{const hotel=prompt('Название отеля:');if(!hotel)return;const tariff=prompt('Тариф:');if(!tariff)return;const r={roomId:'NEW_'+Date.now(),hotel,tariff,beds:2,floor:1,g1:'',g2:'',blockedPlaces:[]};d.rooms.push(r);try{await save('adminRooms',r.roomId,r);settings();toast('Комната добавлена')}catch(e){toast('Ошибка: '+e.message)}};
   }
 
-  document.querySelector('#nav').onclick = e => { const button=e.target.closest('[data-view]'); if(button) render(button.dataset.view); };
   document.querySelector('#refresh').onclick = async () => { await readCloud(); render(document.querySelector('.nav-item.active')?.dataset.view || 'dashboard'); toast('Данные обновлены'); };
   await requireAdmin();
   await readCloud();
