@@ -210,11 +210,20 @@
         const people = [...((registration && registration.participants) || [])];
         const index = people.findIndex(person => (g.email && person.email === g.email) || (!g.email && person.name === g.name));
         const target = index >= 0 ? index : Number(g.participantIndex);
+        const beds = registration?.beds || g.beds || [];
         if (people.length > 1 && target >= 0 && target < people.length) {
           people.splice(target, 1);
           await f.updateDoc(registrationRef, {participants: people, updatedAt: f.serverTimestamp()});
+          const ownerName = people.map(x => x.name).filter(Boolean).join(', ');
+          await Promise.all(beds.map(bed => f.setDoc(f.doc(f.db, 'placeLocks', bed), {
+            type: 'occupied',
+            name: ownerName,
+            email: people[0]?.email || registration.loginEmail || g.email || '',
+            ownerUid: registration.ownerUid || g.ownerUid || '',
+            registrationId: registrationRef.id,
+            updatedAt: f.serverTimestamp(),
+          }, {merge: true})));
         } else if (registration) {
-          const beds = registration.beds || g.beds || [];
           await f.deleteDoc(registrationRef);
           await Promise.all(beds.map(bed => f.deleteDoc(f.doc(f.db, 'placeLocks', bed))));
         }
@@ -230,7 +239,7 @@
     modal.innerHTML = `<form class="edit-dialog" style="width:min(700px,100%);max-height:90vh;overflow:auto;background:#fffdfb;border-radius:14px;padding:22px"><h2>Редактирование участника</h2><div class="fields">${[['name','ФИО'],['spirit','Духовное имя'],['email','Email'],['phone','Телефон'],['age','Возраст'],['city','Город'],['country','Страна'],['tariff','Тариф']].map(([name,label]) => `<div class="field"><label>${label}</label><input name="${name}" value="${esc(g[name])}"></div>`).join('')}<div class="field full"><label>Места через запятую</label><input name="beds" value="${esc((g.beds||[]).join(', '))}"></div></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><button type="button" class="ghost" data-cancel>Отмена</button><button class="primary">Сохранить</button></div></form>`;
     document.body.appendChild(modal); modal.querySelector('[data-cancel]').onclick = () => modal.remove();
     modal.querySelector('form').onsubmit = async event => { event.preventDefault(); const fd = new FormData(event.target), fields = ['name','spirit','email','phone','age','city','country','tariff']; fields.forEach(x => g[x] = fd.get(x));
-      try { const f = await waitFirebase(); const newBeds=String(fd.get('beds')||'').split(',').map(x=>x.trim()).filter(Boolean); g.beds=newBeds; if (g.registrationId !== undefined) { const snap = await f.getDocs(f.collection(f.db, 'registrations')); const found = snap.docs.find(x => x.id === g.registrationId); if (found) { const reg = found.data(), people = [...(reg.participants || [])]; people[g.participantIndex] = {...people[g.participantIndex], ...Object.fromEntries(fields.map(x => [x, g[x]]))}; await f.updateDoc(f.doc(f.db, 'registrations', g.registrationId), {participants:people, beds:newBeds, updatedAt:f.serverTimestamp()}); } } await save('adminGuests', g.email || g.name, g); modal.remove(); await readCloud(); render('guests'); toast('Изменения сохранены'); } catch (error) { toast('Ошибка сохранения: ' + error.message); }
+      try { const f = await waitFirebase(); const newBeds=String(fd.get('beds')||'').split(',').map(x=>x.trim()).filter(Boolean); g.beds=newBeds; if (g.registrationId !== undefined) { const snap = await f.getDocs(f.collection(f.db, 'registrations')); const found = snap.docs.find(x => x.id === g.registrationId); if (found) { const reg = found.data(), people = [...(reg.participants || [])]; const previousBeds = (reg.beds || g.beds || []).filter(Boolean); const oldBeds = new Set(previousBeds); const nextBeds = new Set(newBeds); const removedBeds = previousBeds.filter(bed => !nextBeds.has(bed)); const addedBeds = newBeds.filter(bed => !oldBeds.has(bed)); people[g.participantIndex] = {...people[g.participantIndex], ...Object.fromEntries(fields.map(x => [x, g[x]]))}; await f.updateDoc(f.doc(f.db, 'registrations', g.registrationId), {participants:people, beds:newBeds, updatedAt:f.serverTimestamp()}); const ownerName = people.map(x => x.name).filter(Boolean).join(', '); await Promise.all(removedBeds.map(bed => f.deleteDoc(f.doc(f.db, 'placeLocks', bed)))); await Promise.all(addedBeds.map(bed => f.setDoc(f.doc(f.db, 'placeLocks', bed), {type:'occupied',name:ownerName,email:people[0]?.email || g.email || '',ownerUid:reg.ownerUid || g.ownerUid || '',registrationId:g.registrationId,updatedAt:f.serverTimestamp()},{merge:true}))); } } } await save('adminGuests', g.email || g.name, g); modal.remove(); await readCloud(); render('guests'); toast('Изменения сохранены'); } catch (error) { toast('Ошибка сохранения: ' + error.message); }
     };
   }
 

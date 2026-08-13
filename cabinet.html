@@ -5,13 +5,42 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Личный кабинет — Ретрит 2026</title>
   <link rel="stylesheet" href="styles.css?v=20260813">
+  <style>
+    .cabinet{max-width:1100px;margin:0 auto;padding:28px 18px 60px}
+    .cabinet-card{background:#fffdfb;border:1px solid #e8e0d7;border-radius:18px;padding:24px;box-shadow:0 10px 30px #4435240d;margin-bottom:16px}
+    .cabinet-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap}
+    .cabinet-status{margin-top:10px;color:#8a8078;font-size:12px;line-height:1.5}
+    .cabinet-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .members{display:grid;gap:12px;margin-top:16px}
+    .member-card{border:1px solid #e4ddd5;border-radius:14px;padding:16px;background:#fff}
+    .member-card h3{margin:0 0 12px;font:700 14px Manrope}
+    .member-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .member-grid .field.full{grid-column:1/-1}
+    .member-controls{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px}
+    .danger{border:1px solid #c94848;background:#fff5f5;color:#9d2e2e}
+    .summary{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:#f7f1ea;color:#6d5a4c;font-size:12px;margin-top:14px}
+    .bed-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px}
+    .bed-chip{border:1px solid #e0d6cd;border-radius:11px;padding:10px 12px;background:#fff;display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:12px}
+    .bed-chip button{border:0;background:none;color:#b85a33;cursor:pointer;font:700 12px Manrope}
+    .bed-chip.off{background:#f6f3f0;color:#93867c}
+    .empty{color:#8a8078;font-size:13px;line-height:1.6}
+    @media(max-width:700px){.member-grid{grid-template-columns:1fr}}
+  </style>
 </head>
 <body>
   <main class="cabinet">
     <section class="cabinet-card">
-      <h1>Личный кабинет</h1>
-      <p>Вход по email и паролю</p>
-      <div id="login-box">
+      <div class="cabinet-head">
+        <div>
+          <h1 style="margin:0 0 6px">Личный кабинет</h1>
+          <p style="margin:0;color:#8b8179">Просмотр и редактирование заявки</p>
+        </div>
+        <div class="cabinet-actions">
+          <button id="logout" class="ghost" type="button" style="display:none">Выйти</button>
+          <a class="ghost" href="participant.html">Вернуться к форме</a>
+        </div>
+      </div>
+      <div id="login-box" style="margin-top:18px">
         <div class="field">
           <label>Email</label>
           <input id="email" type="email" autocomplete="username">
@@ -20,18 +49,25 @@
           <label>Пароль</label>
           <input id="password" type="password" autocomplete="current-password" minlength="6">
         </div>
-        <button id="login" class="primary" type="button">Войти</button>
+        <button id="login" class="primary" type="button" style="margin-top:12px">Войти</button>
         <div id="status" class="cabinet-status"></div>
       </div>
-      <div id="user-box" class="hidden">
-        <span id="user-email"></span>
-        <button id="logout" class="ghost" type="button">Выйти</button>
+      <div id="user-box" class="hidden" style="margin-top:12px">
+        <div id="user-email" class="cabinet-status"></div>
       </div>
-      <p class="muted"><a href="participant.html">← Вернуться к форме участника</a></p>
     </section>
 
     <section id="application" class="cabinet-card hidden">
-      <h2>Моя заявка</h2>
+      <div class="cabinet-head">
+        <div>
+          <h2 style="margin:0 0 6px">Моя заявка</h2>
+          <p style="margin:0;color:#8b8179">Можно менять состав участников и выбранные места</p>
+        </div>
+        <div class="cabinet-actions">
+          <button id="add-member" class="primary" type="button">+ Добавить участника</button>
+          <button id="save" class="ghost" type="button">Сохранить изменения</button>
+        </div>
+      </div>
       <div id="application-content"></div>
     </section>
   </main>
@@ -39,31 +75,235 @@
   <script type="module">
     import {auth, db} from './firebase-config.js';
     import {signInWithEmailAndPassword, onAuthStateChanged, signOut} from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
-    import {collection, getDocs, query, where} from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
+    import {collection, getDocs, query, where, doc, updateDoc, setDoc, deleteDoc, serverTimestamp} from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
 
     const $ = id => document.getElementById(id);
-    const status = $('status');
     const esc = value => String(value ?? '').replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[x]));
+    const status = $('status');
+    const state = { registration: null, registrations: [], bedLocks: new Map(), user: null };
 
-    function renderApplications(docs) {
-      $('application-content').innerHTML = docs.map(s => {
-        const r = s.data();
-        return `<div class="person"><b>${esc((r.participants || []).map(p => p.name).filter(Boolean).join(', '))}</b><div class="muted">Места: ${esc((r.beds || []).join(', ') || 'не выбраны')}</div><div class="muted">Статус: ${esc(r.status || 'заявка получена')}</div></div>`;
-      }).join('') || 'Заявка пока не найдена. Если вы только выбирали место, но не нажали «Отправить заявку», вернитесь к форме и отправьте её. Если заявка уже была отправлена, проверьте, что вошли с тем же email.';
+    function bedIdList(reg) {
+      return [...new Set((reg?.beds || []).filter(Boolean))];
     }
 
-    async function loadApplications(user) {
-      $('application-content').textContent = 'Загружаем заявку...';
-      try {
-        const byUid = await getDocs(query(collection(db, 'registrations'), where('ownerUid', '==', user.uid)));
-        if (!byUid.empty) { renderApplications(byUid.docs); return; }
+    function normalizeParticipant(participant = {}) {
+      return {
+        name: participant.name || '',
+        spirit: participant.spirit || '',
+        email: participant.email || '',
+        phone: participant.phone || '',
+        age: participant.age || '',
+        city: participant.city || participant.location || '',
+        country: participant.country || '',
+        tariff: participant.tariff || '',
+      };
+    }
 
-        const byEmail = await getDocs(query(collection(db, 'registrations'), where('loginEmail', '==', user.email)));
-        renderApplications(byEmail.docs);
-      } catch (error) {
-        console.error(error);
-        $('application-content').textContent = 'Firebase не разрешил прочитать заявку: ' + (error.code || error.message) + '. Проверьте, что новые правила Firestore опубликованы.';
+    function renderApplication() {
+      const reg = state.registration;
+      if (!reg) {
+        $('application-content').innerHTML = `<div class="empty">Заявка не найдена. Если вы только выбирали места, но не отправили форму, вернитесь к регистрации и отправьте её.</div>`;
+        return;
       }
+
+      const participants = (reg.participants || []).map(normalizeParticipant);
+      const beds = bedIdList(reg);
+      $('application-content').innerHTML = `
+        <div class="summary">
+          <div>Статус: <strong>${esc(reg.status || 'заявка получена')}</strong></div>
+          <div>Участников: <strong id="member-count">${participants.length}</strong></div>
+          <div>Мест: <strong id="bed-count">${beds.length}</strong></div>
+        </div>
+        <div class="bed-list" id="bed-list">${beds.map(bed => {
+          const lock = state.bedLocks.get(bed);
+          const label = lock?.name || lock?.email || 'занято';
+          return `<div class="bed-chip ${lock ? '' : 'off'}"><span>${esc(bed)}${lock ? ` · ${esc(label)}` : ''}</span><button type="button" data-remove-bed="${esc(bed)}">Удалить</button></div>`;
+        }).join('') || '<div class="empty">Места не выбраны.</div>'}</div>
+        <div class="members" id="members">
+          ${participants.map((p, index) => renderMemberCard(p, index)).join('')}
+        </div>
+      `;
+      bindMemberEvents();
+      bindBedEvents();
+      updateCounters();
+    }
+
+    function renderMemberCard(participant, index) {
+      return `
+        <article class="member-card" data-member-index="${index}">
+          <h3>Участник ${index + 1}</h3>
+          <div class="member-grid">
+            ${field('name', 'ФИО *', participant.name, true, index)}
+            ${field('spirit', 'Духовное имя', participant.spirit, false, index)}
+            ${field('email', 'Email *', participant.email, true, index, 'email')}
+            ${field('phone', 'Телефон *', participant.phone, true, index, 'tel')}
+            ${field('age', 'Возраст *', participant.age, true, index, 'number')}
+            ${field('city', 'Город', participant.city, false, index)}
+            ${field('country', 'Страна', participant.country, false, index)}
+            ${field('tariff', 'Тариф', participant.tariff, false, index)}
+          </div>
+          <div class="member-controls">
+            <span class="cabinet-status">Можно удалить любого участника, кроме последнего</span>
+            <button type="button" class="ghost danger" data-remove-member="${index}">Удалить участника</button>
+          </div>
+        </article>
+      `;
+    }
+
+    function field(name, label, value, required, index, type = 'text') {
+      return `
+        <div class="field ${name === 'name' ? 'full' : ''}">
+          <label>${label}</label>
+          <input data-member-field="${name}" data-member-index="${index}" type="${type}" value="${esc(value)}" ${required ? 'required' : ''}>
+        </div>
+      `;
+    }
+
+    function syncRegistrationFromDom() {
+      const memberCards = [...document.querySelectorAll('[data-member-index]')].filter(el => el.matches('.member-card'));
+      const participants = memberCards.map(card => {
+        const inputs = [...card.querySelectorAll('[data-member-field]')];
+        const data = {};
+        inputs.forEach(input => {
+          data[input.dataset.memberField] = input.value.trim();
+        });
+        return {
+          name: data.name || '',
+          spirit: data.spirit || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          age: data.age || '',
+          city: data.city || '',
+          country: data.country || '',
+          tariff: data.tariff || '',
+        };
+      });
+      const beds = [...document.querySelectorAll('[data-remove-bed]')].map(x => x.dataset.removeBed);
+      return { participants, beds };
+    }
+
+    function bindMemberEvents() {
+      document.querySelectorAll('[data-remove-member]').forEach(button => {
+        button.onclick = () => {
+          const reg = state.registration;
+          const members = document.querySelectorAll('.member-card');
+          if (members.length <= 1) {
+            status.textContent = 'Нужно оставить хотя бы одного участника.';
+            return;
+          }
+          const index = Number(button.dataset.removeMember);
+          if (!Number.isNaN(index)) {
+            reg.participants.splice(index, 1);
+          }
+          renderApplication();
+        };
+      });
+      document.querySelectorAll('[data-member-field]').forEach(input => {
+        input.oninput = () => {
+          const card = input.closest('.member-card');
+          const idx = Number(card?.dataset.memberIndex);
+          const nextIndex = [...document.querySelectorAll('.member-card')].indexOf(card);
+          if (!Number.isNaN(nextIndex)) card.dataset.memberIndex = String(nextIndex);
+          card.querySelector('h3').textContent = `Участник ${nextIndex + 1}`;
+        };
+      });
+    }
+
+    function bindBedEvents() {
+      document.querySelectorAll('[data-remove-bed]').forEach(button => {
+        button.onclick = () => {
+          const bed = button.dataset.removeBed;
+          const locks = state.bedLocks;
+          if (locks.has(bed)) locks.delete(bed);
+          const reg = state.registration;
+          reg.beds = (reg.beds || []).filter(x => x !== bed);
+          renderApplication();
+        };
+      });
+    }
+
+    function updateCounters() {
+      const reg = state.registration;
+      if (!reg) return;
+      const memberCount = document.querySelectorAll('.member-card').length;
+      const bedCount = document.querySelectorAll('[data-remove-bed]').length;
+      const mc = document.querySelector('#member-count');
+      const bc = document.querySelector('#bed-count');
+      if (mc) mc.textContent = String(memberCount);
+      if (bc) bc.textContent = String(bedCount);
+    }
+
+    async function loadRegistrations(user) {
+      const byUid = await getDocs(query(collection(db, 'registrations'), where('ownerUid', '==', user.uid)));
+      if (!byUid.empty) return byUid.docs.sort((a, b) => {
+        const aTime = a.data().createdAt?.toMillis ? a.data().createdAt.toMillis() : 0;
+        const bTime = b.data().createdAt?.toMillis ? b.data().createdAt.toMillis() : 0;
+        return bTime - aTime;
+      });
+      const byEmail = await getDocs(query(collection(db, 'registrations'), where('loginEmail', '==', user.email)));
+      return byEmail.docs.sort((a, b) => {
+        const aTime = a.data().createdAt?.toMillis ? a.data().createdAt.toMillis() : 0;
+        const bTime = b.data().createdAt?.toMillis ? b.data().createdAt.toMillis() : 0;
+        return bTime - aTime;
+      });
+    }
+
+    async function refreshState() {
+      if (!state.user) return;
+      const docs = await loadRegistrations(state.user);
+      state.registrations = docs;
+      state.registration = docs[0] ? { id: docs[0].id, ...docs[0].data() } : null;
+      state.registrationOptions = docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      }));
+
+      const lockSnap = await getDocs(collection(db, 'placeLocks'));
+      state.bedLocks = new Map();
+      lockSnap.forEach(snap => {
+        const lock = snap.data();
+        if (lock.type === 'occupied' || lock.type === 'payment') state.bedLocks.set(snap.id, lock);
+      });
+    }
+
+    async function saveChanges() {
+      const reg = state.registration;
+      if (!reg) return;
+      const next = syncRegistrationFromDom();
+      if (!next.participants.length) throw new Error('Нужно сохранить хотя бы одного участника.');
+      if (!next.participants[0].email) throw new Error('У первого участника должен быть email.');
+
+      const oldBeds = new Set(bedIdList(reg));
+      const newBeds = new Set(next.beds);
+      const removedBeds = [...oldBeds].filter(bed => !newBeds.has(bed));
+      const addedBeds = [...newBeds].filter(bed => !oldBeds.has(bed));
+
+      await updateDoc(doc(db, 'registrations', reg.id), {
+        participants: next.participants,
+        beds: next.beds,
+        loginEmail: next.participants[0].email || '',
+        updatedAt: serverTimestamp(),
+      });
+
+      const ownerName = next.participants.map(p => p.name).filter(Boolean).join(', ');
+      const ownerEmail = next.participants[0].email || '';
+      for (const bed of removedBeds) {
+        await deleteDoc(doc(db, 'placeLocks', bed));
+      }
+      for (const bed of addedBeds) {
+        await setDoc(doc(db, 'placeLocks', bed), {
+          type: 'occupied',
+          name: ownerName,
+          email: ownerEmail,
+          ownerUid: state.user.uid,
+          registrationId: reg.id,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+
+      await refreshState();
+      renderApplication();
+      $('status').textContent = 'Заявка сохранена.';
     }
 
     $('login').onclick = async () => {
@@ -79,19 +319,45 @@
     };
 
     $('logout').onclick = () => signOut(auth);
+    $('add-member').onclick = () => {
+      const reg = state.registration;
+      if (!reg) return;
+      reg.participants = [...(reg.participants || []), normalizeParticipant()];
+      renderApplication();
+    };
+    $('save').onclick = async () => {
+      try {
+        $('save').disabled = true;
+        $('save').textContent = 'Сохраняем...';
+        await saveChanges();
+      } catch (error) {
+        status.textContent = 'Ошибка сохранения: ' + (error.code || error.message);
+      } finally {
+        $('save').disabled = false;
+        $('save').textContent = 'Сохранить изменения';
+      }
+    };
 
     onAuthStateChanged(auth, async user => {
+      state.user = user;
       if (!user) {
         $('login-box').classList.remove('hidden');
         $('user-box').classList.add('hidden');
         $('application').classList.add('hidden');
+        $('logout').style.display = 'none';
         return;
       }
       $('login-box').classList.add('hidden');
       $('user-box').classList.remove('hidden');
       $('application').classList.remove('hidden');
+      $('logout').style.display = '';
       $('user-email').textContent = user.email;
-      await loadApplications(user);
+      try {
+        await refreshState();
+        renderApplication();
+      } catch (error) {
+        $('application-content').innerHTML = `<div class="empty">Не удалось загрузить заявку: ${esc(error.code || error.message)}</div>`;
+      }
     });
   </script>
 </body>

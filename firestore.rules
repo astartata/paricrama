@@ -60,7 +60,9 @@ service cloud.firestore {
         || isOwnEmail(resource.data.loginEmail)
         || isOwnUid(resource.data.ownerUid);
 
-      allow update, delete: if isAdmin();
+      allow update, delete: if isAdmin()
+        || isOwnEmail(resource.data.loginEmail)
+        || isOwnUid(resource.data.ownerUid);
     }
 
     match /adminGuests/{guestId} {
