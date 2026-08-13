@@ -42,7 +42,7 @@
 
   <section class="form-card"><h2>Уже зарегистрированы?</h2><p>Введите логин и пароль для входа в личный кабинет.</p><div class="field"><label>Логин (email)</label><input id="login-email" type="email" autocomplete="username" placeholder="your@email.com"></div><div class="field" style="margin-top:10px"><label>Пароль</label><input id="login-password" type="password" autocomplete="current-password" minlength="6" placeholder="Пароль"></div><button id="login-link" class="ghost" style="margin-top:12px">Войти в личный кабинет</button><div class="success" id="login-status"></div></section>
 </main>
-<script src="data.js?v=20260813b"></script><script src="rooms-data.js?v=20260813"></script><script type="module" src="firebase-config.js?v=20260813"></script><script>
+<script src="data.js?v=20260813b"></script><script src="rooms-data.js?v=20260813"></script><script type="module" src="firebase-config.js?v=20260813b"></script><script>
   const roomPool=document.querySelector('.room-pool');
   const roomRows=(window.PARIKRAMA_DATA?.rooms||[]).map((r,ri)=>{const occupants=[r.g1,r.g2,r.g3,r.g4],blocked=r.blockedPlaces||[];const places=Array.from({length:r.beds},(_,i)=>{const occupied=occupants[i],isBlocked=blocked.includes(i+1);return `<label class="bed-sector ${occupied||isBlocked?'occupied':''}"><input class="bed-input" type="checkbox" name="beds[]" value="${r.roomId}-${i+1}" ${occupied||isBlocked?'disabled':''}><strong>Место ${i+1}</strong><small>${occupied?'занято · '+occupied:isBlocked?'заблокировано · '+(r.blockedNote||'резерв'):'свободно'}</small></label>`}).join('');return `<article class="room-box dynamic-room"><div class="room-box-head"><div><div class="room-id">${r.roomId}</div><div class="room-meta">${r.hotel}<br>${r.tariff}</div></div><span class="badge ${r.blocked?'rose':'green'}">${r.blocked?'резерв':r.beds+' мест'}</span></div><div class="room-sectors">${places}</div></article>`}).join('');roomPool.insertAdjacentHTML('afterbegin',roomRows);roomPool.querySelectorAll('.room-box:not(.dynamic-room) input').forEach(x=>x.disabled=true);
   const members=document.querySelector('#group-members'), bedCount=document.querySelector('#bed-count'), memberCount=document.querySelector('#member-count');
@@ -109,8 +109,9 @@
   import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
   const submitButton=document.querySelector('.submit'),passwordWrap=document.createElement('div');passwordWrap.className='field full';passwordWrap.style='margin-top:14px';passwordWrap.innerHTML='<label>Придумайте и сохраните себе пароль для входа в личный кабинет *</label><input name="accountPassword" type="password" minlength="6" required autocomplete="new-password" placeholder="Минимум 6 символов">';submitButton.before(passwordWrap);
   document.querySelector('#registration').addEventListener('submit',async e=>{
+    e.preventDefault();
     const form=e.currentTarget,button=form.querySelector('.submit'),success=document.querySelector('#success');
-    if(button.disabled)return;button.disabled=true;button.textContent='Сохраняем заявку…';
+    if(button.disabled)return;button.disabled=true;button.textContent='Сохраняем заявку…';success.classList.remove('show');success.textContent='';
     try{
       const f=new FormData(form),names=f.getAll('name[]'),participants=names.map((name,i)=>({name,spirit:f.getAll('spirit[]')[i]||'',email:f.getAll('email[]')[i]||'',phone:f.getAll('phone[]')[i]||'',age:f.getAll('age[]')[i]||'',city:f.getAll('location[]')[i]||''})),beds=[...document.querySelectorAll('.bed-input:checked')].map(x=>x.value),password=String(f.get('accountPassword')||'');
       if(password.length<6)throw new Error('Пароль должен быть не короче 6 символов');
@@ -123,7 +124,7 @@
       success.scrollIntoView({behavior:'smooth',block:'center'});
       form.querySelectorAll('input,button,select,textarea').forEach(el=>{if(el!==button)el.disabled=true});
       button.textContent='Заявка принята';
-    }catch(error){console.error(error);button.disabled=false;button.textContent='Отправить заявку';success.textContent='Ошибка Firebase: '+(error.code||'неизвестная ошибка')+' — '+(error.message||'проверьте правила Firestore и настройки Firebase');success.classList.add('show')}
+    }catch(error){console.error(error);button.disabled=false;button.textContent='Отправить заявку';success.textContent='Заявка не отправилась: '+(error.code||'ошибка')+' — '+(error.message||'проверьте правила Firestore и настройки Firebase');success.classList.add('show');success.scrollIntoView({behavior:'smooth',block:'center'})}
   });
 </script>
 <script>
