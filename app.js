@@ -1,5 +1,7 @@
 (async function () {
   const d = window.PARIKRAMA_DATA;
+  const baseGuests = (d.guests || []).map(guest => ({...guest}));
+  const baseRooms = (d.rooms || []).map(room => ({...room}));
   const app = document.querySelector('#app');
   const title = document.querySelector('#page-title');
   const esc = value => String(value ?? '').replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[x]));
@@ -49,34 +51,39 @@
     try {
       const f = await waitFirebase();
       const adminGuestDocs = await f.getDocs(f.collection(f.db, 'adminGuests'));
-      const deletedGuests = new Set();
+      const deletedGuests = new Map();
       adminGuestDocs.forEach(snap => {
         const guest = snap.data();
-        if (guest.deleted || guest.refusal) deletedGuests.add(snap.id);
+        if (guest.deleted || guest.refusal) deletedGuests.set(snap.id, Date.parse(guest.deletedAt) || Infinity);
       });
-      d.guests.forEach(guest => {
-        if (deletedGuests.has(key(guest.email || guest.name))) guest.refusal = true;
-      });
+      const guests = baseGuests
+        .filter(guest => !deletedGuests.has(key(guest.email || guest.name)))
+        .map(guest => ({...guest}));
       const registrations = await f.getDocs(f.collection(f.db, 'registrations'));
       registrations.forEach(snap => {
         const reg = snap.data();
+        const createdAt = reg.createdAt?.toMillis ? reg.createdAt.toMillis() : Date.parse(reg.createdAt) || 0;
         (reg.participants || []).forEach((person, participantIndex) => {
-          if (deletedGuests.has(key(person.email || person.name))) return;
-          let guest = d.guests.find(x => x.email && x.email === person.email) || d.guests.find(x => x.name === person.name);
-          if (!guest) { guest = {name: person.name, refusal: false}; d.guests.push(guest); }
+          const deletedAt = deletedGuests.get(key(person.email || person.name));
+          if (deletedAt !== undefined && createdAt <= deletedAt) return;
+          let guest = guests.find(x => x.email && x.email === person.email) || guests.find(x => x.name === person.name);
+          if (!guest) { guest = {name: person.name, refusal: false}; guests.push(guest); }
           Object.assign(guest, person, {registrationId: snap.id, participantIndex, beds: reg.beds || [], status: reg.status || 'new'});
         });
       });
+      d.guests = guests;
       const roomDocs = await f.getDocs(f.collection(f.db, 'adminRooms'));
+      const rooms = baseRooms.map(room => ({...room}));
       roomDocs.forEach(snap => {
         const data = snap.data();
-        let room = d.rooms.find(x => x.roomId === data.roomId || key(x.roomId) === snap.id);
-        if (data.deleted) { if (room) room.deleted = true; return; }
-        const cleanRoom={...data, roomId:data.roomId||snap.id, beds:Number(data.beds)||2, g1:'', g2:'', g3:'', g4:''};
-        if (!room) { room = cleanRoom; d.rooms.push(room); }
-        else Object.assign(room, cleanRoom);
+        const roomId = data.roomId || snap.id;
+        const index = rooms.findIndex(x => x.roomId === roomId || key(x.roomId) === snap.id);
+        if (data.deleted) { if (index >= 0) rooms.splice(index, 1); return; }
+        const cleanRoom = {...data, roomId, beds:Number(data.beds)||2, g1:'', g2:'', g3:'', g4:''};
+        if (index >= 0) Object.assign(rooms[index], cleanRoom);
+        else rooms.push(cleanRoom);
       });
-      d.rooms = d.rooms.filter(x => !x.deleted);
+      d.rooms = rooms;
       return registrations;
     } catch (error) { console.error(error); toast('Firebase: ' + (error.message || 'не удалось загрузить данные')); return null; }
   }
@@ -134,21 +141,23 @@
     try {
       const f = await waitFirebase();
       if (g.registrationId) {
-        const registrationSnap = await f.getDocs(f.collection(f.db, 'registrations'));
-        const registration = registrationSnap.docs.find(snap => snap.id === g.registrationId);
-        const people = registration ? (registration.data().participants || []) : [];
-        if (people.length > 1) {
-          people.splice(Number(g.participantIndex), 1);
-          await f.updateDoc(f.doc(f.db, 'registrations', g.registrationId), {participants: people, updatedAt: f.serverTimestamp()});
-        } else {
-          await f.deleteDoc(f.doc(f.db, 'registrations', g.registrationId));
-          await Promise.all((g.beds || []).map(bed => f.deleteDoc(f.doc(f.db, 'placeLocks', bed))));
+        const registrationRef = f.doc(f.db, 'registrations', g.registrationId);
+        const registrationSnap = await f.getDoc(registrationRef);
+        const registration = registrationSnap.exists() ? registrationSnap.data() : null;
+        const people = [...((registration && registration.participants) || [])];
+        const index = people.findIndex(person => (g.email && person.email === g.email) || (!g.email && person.name === g.name));
+        const target = index >= 0 ? index : Number(g.participantIndex);
+        if (people.length > 1 && target >= 0 && target < people.length) {
+          people.splice(target, 1);
+          await f.updateDoc(registrationRef, {participants: people, updatedAt: f.serverTimestamp()});
+        } else if (registration) {
+          const beds = registration.beds || g.beds || [];
+          await f.deleteDoc(registrationRef);
+          await Promise.all(beds.map(bed => f.deleteDoc(f.doc(f.db, 'placeLocks', bed))));
         }
       }
-      g.refusal = true;
-      g.deleted = true;
-      await save('adminGuests', g.email || g.name, {...g, refusal:true, deleted:true});
-      d.guests = d.guests.filter(x => x !== g);
+      await save('adminGuests', g.email || g.name, {name:g.name || '', email:g.email || '', refusal:true, deleted:true, deletedAt:new Date().toISOString()});
+      await readCloud();
       render('guests'); toast('Участник удалён');
     } catch (error) { toast('Ошибка удаления: ' + error.message); }
   }
@@ -188,7 +197,7 @@
     app.innerHTML=`<div class="panel"><div class="panel-head"><div><h2>Отели и тарифы</h2><p class="sub">Редактируйте и сохраняйте каждую комнату.</p></div><button class="primary" id="new-room">+ Добавить</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Отель</th><th>Тариф</th><th>Мест</th><th>Этаж</th><th></th></tr></thead><tbody>${d.rooms.map((r,i)=>`<tr><td><input data-i="${i}" data-k="hotel" value="${esc(r.hotel)}"></td><td><input data-i="${i}" data-k="tariff" value="${esc(r.tariff)}"></td><td><input data-i="${i}" data-k="beds" type="number" min="1" value="${r.beds}"></td><td><input data-i="${i}" data-k="floor" value="${esc(r.floor)}"></td><td><button class="edit-button save-room" data-i="${i}">Сохранить</button> <button class="edit-button delete-room" data-i="${i}">Удалить</button></td></tr>`).join('')}</tbody></table></div></div>`;
     document.querySelectorAll('[data-k]').forEach(input=>input.oninput=()=>{const r=d.rooms[Number(input.dataset.i)];r[input.dataset.k]=input.dataset.k==='beds'||input.dataset.k==='floor'?Number(input.value)||1:input.value});
     document.querySelectorAll('.save-room').forEach(b=>b.onclick=async()=>{try{const r=d.rooms[Number(b.dataset.i)];await save('adminRooms',r.roomId,r);toast('Сохранено')}catch(e){toast('Ошибка: '+e.message)}});
-    document.querySelectorAll('.delete-room').forEach(b=>b.onclick=async()=>{const r=d.rooms[Number(b.dataset.i)];if(!confirm('Удалить комнату '+r.roomId+'?'))return;try{await save('adminRooms',r.roomId,{roomId:r.roomId,deleted:true});d.rooms.splice(Number(b.dataset.i),1);settings();toast('Комната удалена')}catch(e){toast('Ошибка удаления: '+e.message)}});
+    document.querySelectorAll('.delete-room').forEach(b=>b.onclick=async()=>{const r=d.rooms[Number(b.dataset.i)];if(!confirm('Удалить комнату '+r.roomId+'?'))return;try{const f=await waitFirebase();await save('adminRooms',r.roomId,{roomId:r.roomId,deleted:true});await Promise.all(Array.from({length:Number(r.beds)||2},(_,i)=>f.deleteDoc(f.doc(f.db,'placeLocks',r.roomId+'-'+(i+1)))));await readCloud();settings();toast('Комната удалена')}catch(e){toast('Ошибка удаления: '+e.message)}});
     document.querySelector('#new-room').onclick=async()=>{const hotel=prompt('Название отеля:');if(!hotel)return;const tariff=prompt('Тариф:');if(!tariff)return;const r={roomId:'NEW_'+Date.now(),hotel,tariff,beds:2,floor:1,g1:'',g2:'',blockedPlaces:[]};d.rooms.push(r);try{await save('adminRooms',r.roomId,r);settings();toast('Комната добавлена')}catch(e){toast('Ошибка: '+e.message)}};
   }
 
