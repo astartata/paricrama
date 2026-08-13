@@ -36,7 +36,18 @@
       const adminDoc = await f.getDoc(f.doc(f.db, 'admins', user.uid));
       return adminDoc.exists();
     };
-    const currentUser = await new Promise(resolve => f.onAuthStateChanged(f.auth, resolve));
+    const currentUser = await new Promise(resolve => {
+      let finished = false;
+      let unsubscribe = () => {};
+      const finish = user => {
+        if (finished) return;
+        finished = true;
+        unsubscribe();
+        resolve(user);
+      };
+      unsubscribe = f.onAuthStateChanged(f.auth, finish);
+      setTimeout(() => finish(null), 5000);
+    });
     if (await hasAdminAccess(currentUser)) return true;
     if (currentUser) await f.signOut(f.auth);
     title.textContent = 'Вход администратора';
