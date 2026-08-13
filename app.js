@@ -14,7 +14,19 @@
     if (!clean || /^__.*__$/.test(clean) || clean === '_') return 'guest_' + suffix;
     return clean + '_' + suffix;
   };
-  const waitFirebase = async () => { while (!window.firebaseReady) await new Promise(r => setTimeout(r, 100)); return window.firebaseReady; };
+  const waitFirebase = async () => {
+    if (!window.firebaseReady) {
+      try { await import('./firebase-config.js?v=20260813'); } catch (error) {
+        throw new Error('Не удалось подключить Firebase. Откройте сайт через GitHub Pages или локальный сервер, а не через file://.');
+      }
+    }
+    const startedAt = Date.now();
+    while (!window.firebaseReady) {
+      if (Date.now() - startedAt > 15000) throw new Error('Firebase не ответил за 15 секунд. Проверьте интернет и настройки Firebase.');
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return window.firebaseReady;
+  };
   const toast = message => { const el = document.querySelector('#toast'); if (!el) return; el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2500); };
 
   async function requireAdmin() {
@@ -289,5 +301,11 @@
   document.querySelector('#nav').onclick = e => { const button=e.target.closest('[data-view]'); if(button) render(button.dataset.view); };
   document.querySelector('#refresh').onclick = async () => { await readCloud(); render(document.querySelector('.nav-item.active')?.dataset.view || 'dashboard'); toast('Данные обновлены'); };
   await requireAdmin();
-  await readCloud(); render('dashboard');
-})();
+  await readCloud();
+  const requestedView = new URLSearchParams(location.search).get('view');
+  render(['dashboard', 'guests', 'rooms', 'settings'].includes(requestedView) ? requestedView : 'dashboard');
+})().catch(error => {
+  console.error(error);
+  const app = document.querySelector('#app');
+  if (app) app.innerHTML = `<div class="panel"><h2>Не удалось загрузить админку</h2><p class="sub">${String(error.message || error).replace(/[&<>"']/g, value => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[value]))}</p><button class="primary" onclick="location.reload()">Повторить</button></div>`;
+});
