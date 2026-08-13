@@ -5,7 +5,15 @@
   const app = document.querySelector('#app');
   const title = document.querySelector('#page-title');
   const esc = value => String(value ?? '').replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[x]));
-  const key = value => String(value || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+  const key = value => {
+    const raw = String(value || 'unknown').trim() || 'unknown';
+    const clean = raw.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').slice(0, 90);
+    let hash = 0;
+    for (let i = 0; i < raw.length; i += 1) hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
+    const suffix = Math.abs(hash).toString(36);
+    if (!clean || /^__.*__$/.test(clean) || clean === '_') return 'guest_' + suffix;
+    return clean + '_' + suffix;
+  };
   const waitFirebase = async () => { while (!window.firebaseReady) await new Promise(r => setTimeout(r, 100)); return window.firebaseReady; };
   const toast = message => { const el = document.querySelector('#toast'); if (!el) return; el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2500); };
 
