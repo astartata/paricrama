@@ -52,7 +52,8 @@
 
   async function save(collectionName, id, data) {
     const f = await waitFirebase();
-    await f.setDoc(f.doc(f.db, collectionName, key(id)), {...data, updatedAt: f.serverTimestamp()}, {merge: true});
+    const docId = collectionName === 'adminGuests' ? key(id) : String(id);
+    await f.setDoc(f.doc(f.db, collectionName, docId), {...data, updatedAt: f.serverTimestamp()}, {merge: true});
   }
 
   async function readCloud() {
@@ -96,18 +97,24 @@
     } catch (error) { console.error(error); toast('Firebase: ' + (error.message || 'не удалось загрузить данные')); return null; }
   }
 
-  function placeInfo(room, n, registrations, locks) {
-    const lock = locks[room.roomId + '-' + n];
-    if (lock && lock.type === 'admin') return {state:'admin', text:'заблокировано · ' + (lock.name || 'администратор'), note:lock.note || ''};
-    if (lock && lock.type === 'occupied') return {state:'busy', text:'Заселён · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
-    if (lock && lock.type === 'payment' && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:'Заселён · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
-    if (lock && lock.type === 'selection' && lock.expiresAt > Date.now()) return {state:'busy', text:'Ожидается отправка заявки', note:lock.email || ''};
+  function registrationForBed(registrations, bedId) {
     for (const reg of registrations || []) {
       const data = reg.data();
-      if ((data.beds || []).includes(room.roomId + '-' + n)) return {state:'busy', text:'Заселён · ' + (data.participants || []).map(x => x.name).filter(Boolean).join(', '), note:data.loginEmail || ''};
+      if ((data.beds || []).includes(bedId)) return {id: reg.id, data};
     }
+    return null;
+  }
+
+  function placeInfo(room, n, registrations, locks) {
+    const bedId = room.roomId + '-' + n;
+    const lock = locks[bedId];
+    if (lock && lock.type === 'admin') return {state:'admin', action:'unlock-admin', text:'заблокировано · ' + (lock.name || 'администратор'), note:lock.note || '', button:'Разблокировать'};
+    if (lock && lock.type === 'selection' && lock.expiresAt > Date.now()) return {state:'selection', action:'clear-selection', text:'Ожидается отправка заявки', note:lock.email || '', button:'Освободить'};
+    if (lock && (lock.type === 'occupied' || lock.type === 'payment')) return {state:'busy', action:'release-occupied', text:'Заселён · ' + (lock.name || lock.email || 'участник'), note:lock.email || '', button:'Освободить'};
+    const registration = registrationForBed(registrations, bedId);
+    if (registration) return {state:'busy', action:'release-occupied', text:'Заселён · ' + (registration.data.participants || []).map(x => x.name).filter(Boolean).join(', '), note:registration.data.loginEmail || '', button:'Освободить'};
     const name = room['g' + n];
-    return name ? {state:'busy', text:'Заселён · ' + name, note:''} : {state:'free', text:'Свободно', note:''};
+    return name ? {state:'busy', action:'release-local', text:'Заселён · ' + name, note:'локальная запись', button:'Освободить'} : {state:'free', action:'block-admin', text:'Свободно', note:'', button:'Заблокировать'};
   }
 
   async function cloudPlacement() {
@@ -125,6 +132,44 @@
     });
     if (expired.length) await Promise.all(expired);
     return {registrations: registrations.docs, locks};
+  }
+
+  async function handlePlaceAction(room, place, placement) {
+    const f = await waitFirebase();
+    const bedId = room.roomId + '-' + place;
+    const info = placeInfo(room, place, placement.registrations, placement.locks);
+    try {
+      if (info.action === 'unlock-admin' || info.action === 'clear-selection') {
+        await f.deleteDoc(f.doc(f.db, 'placeLocks', bedId));
+        toast(info.action === 'unlock-admin' ? 'Блокировка снята' : 'Место освобождено');
+      } else if (info.action === 'release-occupied') {
+        if (!confirm('Освободить место ' + bedId + '? Оно будет удалено из заявки.')) return;
+        const lock = placement.locks[bedId];
+        const registration = lock?.registrationId
+          ? placement.registrations.find(reg => reg.id === lock.registrationId)
+          : registrationForBed(placement.registrations, bedId);
+        if (registration) {
+          const data = registration.data();
+          await f.updateDoc(f.doc(f.db, 'registrations', registration.id), {beds:(data.beds || []).filter(x => x !== bedId), updatedAt:f.serverTimestamp()});
+        }
+        await f.deleteDoc(f.doc(f.db, 'placeLocks', bedId));
+        toast('Место освобождено');
+      } else if (info.action === 'release-local') {
+        room['g' + place] = '';
+        await save('adminRooms', room.roomId, room);
+        toast('Место освобождено');
+      } else {
+        const name = prompt('Кто блокирует место? Имя и фамилия:','');
+        if (name === null) return;
+        const note = prompt('Комментарий:','') || '';
+        await save('placeLocks', bedId, {type:'admin',name:name || 'Команда',note,roomId:room.roomId,place});
+        toast('Место заблокировано');
+      }
+      await readCloud();
+      render('rooms');
+    } catch(error) {
+      toast('Ошибка: ' + (error.code || error.message));
+    }
   }
 
   function render(view = 'dashboard') {
@@ -195,15 +240,16 @@
       const places = Array.from({length:Number(r.beds)||2}, (_, i) => {
         const p = placeInfo(r, i + 1, placement.registrations, placement.locks);
         const free = p.state === 'free';
-        return `<div class="admin-place ${free ? 'admin-place-free' : 'admin-place-busy'}" style="border:1px solid var(--line);border-radius:9px;padding:10px;background:${p.state==='busy'?'#f1f0ed':p.state==='admin'?'#fff0e0':'#fff'}"><b>Место ${i+1}</b><div class="sub">${esc(p.text)}</div>${p.note?`<div class="sub">${esc(p.note)}</div>`:''}<button class="edit-button toggle-lock" data-room="${ri}" data-place="${i+1}">${p.state==='admin'?'Снять блокировку':'Заблокировать'}</button></div>`;
+        return `<div class="admin-place ${free ? 'admin-place-free' : 'admin-place-busy'}" style="border:1px solid var(--line);border-radius:9px;padding:10px;background:${p.state==='busy'||p.state==='selection'?'#f1f0ed':p.state==='admin'?'#fff0e0':'#fff'}"><b>Место ${i+1}</b><div class="sub">${esc(p.text)}</div>${p.note?`<div class="sub">${esc(p.note)}</div>`:''}<button class="edit-button place-action" data-room="${ri}" data-place="${i+1}">${esc(p.button)}</button></div>`;
       }).join('');
       const freeCount = Array.from({length:Number(r.beds)||2}, (_, i) => placeInfo(r, i + 1, placement.registrations, placement.locks)).filter(p => p.state === 'free').length;
       return `<div class="room-card"><div class="room-top"><div><div class="room-id">${esc(r.roomId)}</div><div class="room-hotel">${esc(r.hotel)} · ${esc(r.tariff)}</div></div><span class="badge ${freeCount ? 'green' : 'rose'}">${freeCount} из ${Number(r.beds)||2} свободно</span></div><div class="room-sectors" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${places}</div><button class="edit-button edit-room" data-room="${ri}" style="margin-top:12px">Изменить номер</button></div>`;
     }).join('');
-    app.innerHTML = `<div class="panel"><div class="panel-head"><div><h2>База комнат</h2><p class="sub">Номера показаны так же, как участнику: каждое место отмечено как «Заселён» с именем или «Свободно».</p></div><button class="primary" id="reload-rooms">Обновить</button></div><div class="grid room-grid">${roomCards}</div></div>`;
+    app.innerHTML = `<div class="panel"><div class="panel-head"><div><h2>База комнат</h2><p class="sub">Номера показаны так же, как участнику: каждое место отмечено как «Заселён» с именем или «Свободно».</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="ghost" id="clear-expired">Очистить зависшие</button><button class="primary" id="reload-rooms">Обновить</button></div></div><div class="grid room-grid">${roomCards}</div></div>`;
     document.querySelector('#reload-rooms').onclick = async () => { await readCloud(); render('rooms'); };
+    document.querySelector('#clear-expired').onclick = async () => { try { placement = await cloudPlacement(); render('rooms'); toast('Зависшие выборы очищены'); } catch(error) { toast('Ошибка очистки: ' + (error.code || error.message)); } };
     document.querySelectorAll('.edit-room').forEach(b => b.onclick = () => editRoom(d.rooms[Number(b.dataset.room)]));
-    document.querySelectorAll('.toggle-lock').forEach(b => b.onclick = async () => { const r=d.rooms[Number(b.dataset.room)], n=Number(b.dataset.place), id=r.roomId+'-'+n, existing=placement.locks[id]; try { if (existing?.type === 'admin') await save('placeLocks', id, {type:'released', releasedAt:new Date().toISOString()}); else { const name=prompt('Кто блокирует место? Имя и фамилия:',''); if (name === null) return; const note=prompt('Комментарий:','') || ''; await save('placeLocks', id, {type:'admin',name:name || 'Команда',note,roomId:r.roomId,place:n}); } render('rooms'); toast('Изменения сохранены'); } catch(error) { toast('Ошибка: '+error.message); } });
+    document.querySelectorAll('.place-action').forEach(b => b.onclick = () => handlePlaceAction(d.rooms[Number(b.dataset.room)], Number(b.dataset.place), placement));
   }
 
   function editRoom(r) {
