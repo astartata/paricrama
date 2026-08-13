@@ -101,7 +101,7 @@
     if (lock && lock.type === 'admin') return {state:'admin', text:'заблокировано · ' + (lock.name || 'администратор'), note:lock.note || ''};
     if (lock && lock.type === 'occupied') return {state:'busy', text:'Заселён · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
     if (lock && lock.type === 'payment' && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:'Заселён · ' + (lock.name || lock.email || 'участник'), note:lock.email || ''};
-    if (lock && lock.type === 'selection' && (!lock.expiresAt || lock.expiresAt > Date.now())) return {state:'busy', text:'Ожидается отправка заявки', note:lock.email || ''};
+    if (lock && lock.type === 'selection' && lock.expiresAt > Date.now()) return {state:'busy', text:'Ожидается отправка заявки', note:lock.email || ''};
     for (const reg of registrations || []) {
       const data = reg.data();
       if ((data.beds || []).includes(room.roomId + '-' + n)) return {state:'busy', text:'Заселён · ' + (data.participants || []).map(x => x.name).filter(Boolean).join(', '), note:data.loginEmail || ''};
@@ -113,7 +113,17 @@
   async function cloudPlacement() {
     const f = await waitFirebase();
     const [registrations, lockDocs] = await Promise.all([f.getDocs(f.collection(f.db, 'registrations')), f.getDocs(f.collection(f.db, 'placeLocks'))]);
-    const locks = {}; lockDocs.forEach(x => locks[x.id] = x.data());
+    const locks = {};
+    const expired = [];
+    lockDocs.forEach(x => {
+      const lock = x.data();
+      if (lock.type === 'selection' && (!lock.expiresAt || lock.expiresAt <= Date.now())) {
+        expired.push(f.deleteDoc(f.doc(f.db, 'placeLocks', x.id)));
+        return;
+      }
+      locks[x.id] = lock;
+    });
+    if (expired.length) await Promise.all(expired);
     return {registrations: registrations.docs, locks};
   }
 

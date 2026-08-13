@@ -49,7 +49,7 @@
       $('application-content').innerHTML = docs.map(s => {
         const r = s.data();
         return `<div class="person"><b>${esc((r.participants || []).map(p => p.name).filter(Boolean).join(', '))}</b><div class="muted">Места: ${esc((r.beds || []).join(', ') || 'не выбраны')}</div><div class="muted">Статус: ${esc(r.status || 'заявка получена')}</div></div>`;
-      }).join('') || 'Заявка с таким email пока не найдена. Если вы уже отправляли заявку до обновления кабинета, напишите администратору: он привяжет её к вашему аккаунту.';
+      }).join('') || 'Заявка пока не найдена. Если вы только выбирали место, но не нажали «Отправить заявку», вернитесь к форме и отправьте её. Если заявка уже была отправлена, проверьте, что вошли с тем же email.';
     }
 
     async function loadApplications(user) {
