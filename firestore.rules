@@ -19,6 +19,16 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function ownsRegistration(registrationId) {
+      return signedIn()
+        && registrationId is string
+        && exists(/databases/$(database)/documents/registrations/$(registrationId))
+        && (
+          get(/databases/$(database)/documents/registrations/$(registrationId)).data.ownerUid == request.auth.uid
+          || get(/databases/$(database)/documents/registrations/$(registrationId)).data.loginEmail == request.auth.token.email
+        );
+    }
+
     match /admins/{adminUid} {
       allow get: if signedIn() && request.auth.uid == adminUid;
       allow list, create, update, delete: if isAdmin();
@@ -50,7 +60,11 @@ service cloud.firestore {
         );
 
       allow delete: if isAdmin()
-        || resource.data.type == 'selection';
+        || resource.data.type == 'selection'
+        || (
+          resource.data.type in ['occupied', 'payment']
+          && ownsRegistration(resource.data.registrationId)
+        );
     }
 
     match /registrations/{registrationId} {
